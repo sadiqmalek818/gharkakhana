@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#2B1B17">
+<title>GharKaKhana — Admin Panel</title>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<!-- Firebase (Firestore) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script src="firebase-config.js"></script>
+<style>
+  :root{
+    --charcoal:#2B1B17; --card:#3D2A22; --turmeric:#E8A93D; --chili:#B54834;
+    --cream:#FBF3E7; --tan:#EFE1CC; --sage:#7A8B69; --text-muted:#5A4632; --text-soft:#8A7256;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{font-family:'Inter',sans-serif; background:var(--cream); color:var(--charcoal);}
+  h1,h2,h3{font-family:'Fraunces',serif; font-weight:700;}
+  .wrap{max-width:480px; margin:0 auto; padding:0 18px 100px;}
+
+  .topbar{background:var(--charcoal); color:var(--cream); padding:16px 0; position:sticky; top:0; z-index:20;}
+  .topbar .wrap{display:flex; align-items:center; justify-content:space-between; padding-bottom:0;}
+  .brand{font-family:'Fraunces',serif; font-weight:700; font-size:17px; display:flex; align-items:center; gap:6px;}
+  .brand i{color:var(--turmeric);}
+  .subtitle{font-size:10.5px; color:#C9B79C; text-transform:uppercase; letter-spacing:0.14em;}
+
+  .tabs{display:flex; gap:6px; margin:16px 0 14px; padding:0 18px; max-width:480px; margin-left:auto; margin-right:auto;}
+  .tab{
+    flex:1; text-align:center; padding:9px 4px; border-radius:11px; font-size:11px; font-weight:700;
+    background:white; border:1px solid var(--tan); color:var(--text-muted); cursor:pointer;
+  }
+  .tab i{display:block; margin-bottom:2px; font-size:12px;}
+  .tab.active{background:var(--charcoal); color:var(--cream); border-color:var(--charcoal);}
+
+  .stat-row{display:flex; gap:10px; margin-bottom:16px;}
+  .stat{flex:1; background:var(--card); color:var(--cream); border-radius:14px; padding:12px; text-align:center;}
+  .stat b{display:block; font-size:17px;}
+  .stat span{font-size:10px; color:#C9B79C;}
+
+  .add-bar{display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;}
+  .add-bar h2{font-size:16px;}
+  .btn{
+    border:none; cursor:pointer; font-weight:700; border-radius:12px; font-size:12.5px;
+    padding:10px 16px; transition:transform .15s;
+  }
+  .btn:active{transform:scale(0.96);}
+  .btn-primary{background:var(--chili); color:var(--cream);}
+  .btn-ghost{background:var(--tan); color:var(--text-muted);}
+  .btn-sm{padding:7px 12px; font-size:11.5px;}
+  .btn i{margin-right:6px;}
+
+  .card{background:white; border:1px solid var(--tan); border-radius:18px; padding:14px; margin-bottom:12px;}
+  .card-top{display:flex; justify-content:space-between; align-items:flex-start; gap:10px;}
+  .avatar{
+    width:38px; height:38px; border-radius:50%; background:var(--tan); color:var(--chili);
+    display:flex; align-items:center; justify-content:center; font-weight:700; font-size:14px; flex:0 0 auto;
+  }
+  .info{flex:1; min-width:0;}
+  .name{font-size:13.5px; font-weight:700;}
+  .meta{font-size:11px; color:var(--text-soft); margin-top:1px;}
+  .badge{font-size:10px; font-weight:700; padding:4px 9px; border-radius:999px; white-space:nowrap;}
+  .badge.active{background:#E7EDE1; color:var(--sage);}
+  .badge.inactive{background:var(--tan); color:var(--text-soft);}
+  .row-actions{display:flex; gap:8px; margin-top:12px;}
+  .icon-btn{
+    flex:1; display:flex; align-items:center; justify-content:center; gap:5px;
+    padding:8px; border-radius:10px; font-size:11.5px; font-weight:700; cursor:pointer; border:1px solid var(--tan);
+    background:var(--cream); color:var(--text-muted);
+  }
+  .icon-btn.danger{color:var(--chili); border-color:#F0D9CF;}
+
+  .empty{text-align:center; padding:30px 10px; color:var(--text-soft); font-size:12.5px;}
+
+  /* Modal */
+  .overlay{
+    position:fixed; inset:0; background:rgba(43,27,23,0.55); display:none;
+    align-items:flex-end; justify-content:center; z-index:100;
+  }
+  .overlay.open{display:flex;}
+  .modal{
+    background:var(--cream); width:100%; max-width:480px; border-radius:24px 24px 0 0;
+    padding:20px 18px 26px; animation:slideup .2s ease;
+  }
+  @keyframes slideup{from{transform:translateY(30px); opacity:0;} to{transform:translateY(0); opacity:1;}}
+  .modal h3{font-size:16px; margin-bottom:14px;}
+  .field{margin-bottom:12px;}
+  .field label{font-size:11px; font-weight:600; color:var(--text-muted); display:block; margin-bottom:5px;}
+  .field input, .field select{
+    width:100%; padding:11px 12px; border-radius:10px; border:1px solid var(--tan);
+    font-size:13px; font-family:'Inter',sans-serif; background:white; color:var(--charcoal);
+  }
+  .modal-actions{display:flex; gap:10px; margin-top:16px;}
+  .modal-actions .btn{flex:1;}
+
+  .toast{
+    position:fixed; bottom:20px; left:50%; transform:translateX(-50%);
+    background:var(--charcoal); color:var(--cream); padding:10px 18px; border-radius:999px;
+    font-size:12px; font-weight:600; z-index:200; opacity:0; pointer-events:none; transition:opacity .25s;
+  }
+  .toast.show{opacity:1;}
+
+  /* Calendar */
+  .cal-box{background:white; border:1px solid var(--tan); border-radius:18px; padding:14px; margin-bottom:16px;}
+  .cal-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;}
+  .cal-head b{font-size:13px; font-family:'Fraunces',serif;}
+  .cal-nav{width:28px; height:28px; border-radius:8px; background:var(--tan); display:flex; align-items:center; justify-content:center; cursor:pointer; color:var(--text-muted);}
+  .cal-grid{display:grid; grid-template-columns:repeat(7,1fr); gap:4px; text-align:center;}
+  .cal-dow{font-size:9.5px; font-weight:700; color:var(--text-soft); padding-bottom:4px;}
+  .cal-day{
+    position:relative; aspect-ratio:1; display:flex; align-items:center; justify-content:center;
+    font-size:11px; border-radius:9px; cursor:pointer; color:var(--charcoal);
+  }
+  .cal-day.other-month{color:var(--tan); cursor:default;}
+  .cal-day.today{font-weight:800; border:1.5px solid var(--chili);}
+  .cal-day.selected{background:var(--charcoal); color:var(--cream);}
+  .cal-dot{position:absolute; bottom:3px; width:5px; height:5px; border-radius:50%;}
+  .cal-dot.pending{background:var(--chili);}
+  .cal-dot.confirmed{background:var(--sage);}
+
+  .order-card{background:white; border:1px solid var(--tan); border-radius:16px; padding:13px; margin-bottom:10px;}
+  .order-card.urgent{border-color:var(--chili); border-width:1.5px;}
+  .order-item{font-size:12.5px; font-weight:700;}
+  .order-meta{font-size:10.5px; color:var(--text-soft); margin-top:3px;}
+  .urgent-tag{background:var(--chili); color:white; font-size:9px; font-weight:800; padding:2px 7px; border-radius:999px; margin-left:6px;}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="wrap">
+    <div>
+      <div class="brand"><i class="fa-solid fa-bowl-food"></i> GharKaKhana</div>
+      <div class="subtitle">Admin Panel</div>
+    </div>
+    <i class="fa-solid fa-user-shield" style="color:#C9B79C; font-size:18px;"></i>
+  </div>
+</div>
+
+<div id="configBanner" style="display:none; background:#F6E2DC; color:var(--chili); font-size:11.5px; font-weight:600; text-align:center; padding:9px 16px;">
+  ⚠️ Firebase config nahi bhara — abhi local demo mode mein hai (changes save nahi honge, refresh pe reset ho jayenge).
+</div>
+
+<div class="tabs">
+  <div class="tab active" data-tab="cooks" onclick="switchTab('cooks')"><i class="fa-solid fa-kitchen-set"></i> Cooks</div>
+  <div class="tab" data-tab="riders" onclick="switchTab('riders')"><i class="fa-solid fa-motorcycle"></i> Riders</div>
+  <div class="tab" data-tab="menu" onclick="switchTab('menu')"><i class="fa-solid fa-utensils"></i> Menu</div>
+  <div class="tab" data-tab="orders" onclick="switchTab('orders')"><i class="fa-solid fa-calendar-check"></i> Orders</div>
+</div>
+
+<div class="wrap">
+  <div class="stat-row" id="statRow"></div>
+
+  <div class="add-bar" id="addBar">
+    <h2 id="sectionTitle">Cooks</h2>
+    <button class="btn btn-primary" id="addBtn" onclick="openModal()"><i class="fa-solid fa-plus"></i>Add</button>
+  </div>
+
+  <div id="calendarBox" style="display:none;"></div>
+
+  <div id="list"></div>
+</div>
+
+<div class="overlay" id="overlay">
+  <div class="modal">
+    <h3 id="modalTitle">Naya Cook Add Karo</h3>
+    <div id="entryForm">
+      <div class="field">
+        <label>Naam</label>
+        <input type="text" id="f_name" required placeholder="e.g. Naseem Ben">
+      </div>
+      <div class="field">
+        <label>Locality / Area</label>
+        <input type="text" id="f_area" required placeholder="e.g. Shah-e-Alam">
+      </div>
+      <div class="field">
+        <label>Phone</label>
+        <input type="tel" id="f_phone" required placeholder="e.g. 98765 43210">
+      </div>
+      <div class="field">
+        <label>Status</label>
+        <select id="f_status">
+          <option value="active">Active</option>
+          <option value="inactive">Inactive</option>
+        </select>
+      </div>
+      <div id="formError" style="display:none; color:var(--chili); font-size:11.5px; font-weight:600; margin-bottom:8px;"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="saveEntry()">Save</button>
+      </div>
+    </div>
+
+    <div id="menuForm" style="display:none;">
+      <div class="field">
+        <label>Item ka naam</label>
+        <input type="text" id="m_name" placeholder="e.g. Mohanthal">
+      </div>
+      <div class="field">
+        <label>Cook</label>
+        <select id="m_cook"></select>
+      </div>
+      <div class="field">
+        <label>Category</label>
+        <select id="m_category">
+          <option value="thali">Thali</option>
+          <option value="roti">Roti &amp; Mande</option>
+          <option value="nashta">Nashta</option>
+          <option value="chai">Chai</option>
+          <option value="mithai">Mithai</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Unit</label>
+        <select id="m_unit">
+          <option value="kg">Per kg</option>
+          <option value="piece">Per piece</option>
+          <option value="cup">Per cup</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Price (₹)</label>
+        <input type="number" id="m_price" placeholder="e.g. 260">
+      </div>
+      <div class="field">
+        <label>Status</label>
+        <select id="m_status">
+          <option value="active">Available</option>
+          <option value="inactive">Paused</option>
+        </select>
+      </div>
+      <div id="menuFormError" style="display:none; color:var(--chili); font-size:11.5px; font-weight:600; margin-bottom:8px;"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="saveMenuItem()">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  // In-memory data (no backend yet — connect a real database for production)
+  function todayISO(){
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  }
+  function addDaysISO(n){
+    const d = new Date();
+    d.setDate(d.getDate() + n);
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  }
+
+  // data.* is now populated LIVE from Firestore (see initFirestoreListeners below).
+  // SEED is only used once, to pre-fill an empty database so the app isn't blank on first run.
+  let data = { cooks: [], riders: [], menu: [], orders: [] };
+  let currentTab = "cooks";
+  let editingId = null;
+  let calViewDate = new Date(); // month currently shown in calendar
+  let selectedDate = todayISO();
+
+  const SEED = {
+    cooks: [
+      { name: "Naseem Ben ki Rasoi", area: "Shah-e-Alam", phone: "98765 43210", status: "active" },
+      { name: "Ammi's Kitchen", area: "Jamalpur", phone: "91234 56780", status: "active" },
+      { name: "Ghar Ka Swaad", area: "Bapunagar", phone: "99887 66550", status: "inactive" },
+    ],
+    riders: [
+      { name: "Faizan Sheikh", area: "Shah-e-Alam", phone: "90000 11122", status: "active" },
+      { name: "Rehan Qureshi", area: "Jamalpur", phone: "90000 22233", status: "active" },
+      { name: "Yusuf Malek", area: "Bapunagar", phone: "90000 33344", status: "inactive" },
+    ],
+    menu: [
+      { name: "Gujarati Thali", cook: "Naseem Ben ki Rasoi", category: "thali", unit: "kg", price: 260, status: "active" },
+      { name: "Chicken Handi", cook: "Ammi's Kitchen", category: "thali", unit: "kg", price: 380, status: "active" },
+      { name: "Bajra Roti + Sabzi", cook: "Ghar Ka Swaad", category: "roti", unit: "kg", price: 180, status: "active" },
+      { name: "Mande", cook: "Ahmed ke Mande", category: "roti", unit: "kg", price: 150, status: "active" },
+      { name: "Samosa & Bread Pakoda", cook: "Rafiq Nashta Corner", category: "nashta", unit: "piece", price: 8, status: "active" },
+      { name: "Kadak Chai", cook: "Iqbal Chai Wale", category: "chai", unit: "cup", price: 12, status: "active" },
+      { name: "Mohanthal", cook: "Javed Halwai", category: "mithai", unit: "kg", price: 450, status: "active" },
+    ],
+  };
+
+  // Seeds a collection ONLY if it's completely empty (first run). Safe to leave in —
+  // it never overwrites or duplicates once real data exists.
+  async function seedIfEmpty(collectionName){
+    const snap = await db.collection(collectionName).limit(1).get();
+    if(snap.empty){
+      const batch = db.batch();
+      SEED[collectionName].forEach(item => {
+        const ref = db.collection(collectionName).doc();
+        batch.set(ref, item);
+      });
+      await batch.commit();
+    }
+  }
+
+  // Live listeners — any change in Firestore (from admin, cook panel, or website)
+  // updates `data` and re-renders automatically, in real time.
+  function initFirestoreListeners(){
+    ["cooks", "riders", "menu"].forEach(collectionName => {
+      db.collection(collectionName).onSnapshot(snapshot => {
+        data[collectionName] = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        if(currentTab === collectionName) render();
+      }, err => showFirestoreError(err));
+    });
+    db.collection("orders").onSnapshot(snapshot => {
+      data.orders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      if(currentTab === "orders"){ renderCalendar(); renderOrdersList(); }
+    }, err => showFirestoreError(err));
+  }
+
+  function showFirestoreError(err){
+    console.error("Firestore error:", err);
+    document.getElementById("configBanner").style.display = "block";
+    document.getElementById("configBanner").textContent =
+      "⚠️ Firestore se connect nahi ho paya (" + err.code + "). Firestore rules check karo — naya project by default sab read/write block karta hai.";
+  }
+
+  // Falls back to LOCAL demo data (no crash, no Firestore calls) until
+  // firebase-config.js has your real project config.
+  function loadLocalDemoData(){
+    let idCounter = 1;
+    ["cooks", "riders", "menu"].forEach(collectionName => {
+      data[collectionName] = SEED[collectionName].map(item => ({ id: "local" + (idCounter++), ...item }));
+    });
+    data.orders = [];
+    render();
+  }
+
+  if(window.FIREBASE_CONFIGURED){
+    seedIfEmpty("cooks");
+    seedIfEmpty("riders");
+    seedIfEmpty("menu");
+    initFirestoreListeners();
+  } else {
+    document.getElementById("configBanner").style.display = "block";
+    loadLocalDemoData();
+  }
+
+  function initials(name){
+    return name.split(" ").map(w=>w[0]).slice(0,2).join("").toUpperCase();
+  }
+
+  function render(){
+    if(currentTab === "menu"){ renderMenuList(); return; }
+    if(currentTab === "orders"){ renderCalendar(); renderOrdersList(); return; }
+
+    const items = data[currentTab];
+    document.getElementById("sectionTitle").textContent = currentTab === "cooks" ? "Cooks" : "Riders";
+
+    const activeCount = items.filter(i=>i.status==="active").length;
+    document.getElementById("statRow").innerHTML = `
+      <div class="stat"><b>${items.length}</b><span>Total ${currentTab}</span></div>
+      <div class="stat"><b>${activeCount}</b><span>Active</span></div>
+      <div class="stat"><b>${items.length - activeCount}</b><span>Inactive</span></div>
+    `;
+
+    const list = document.getElementById("list");
+    if(items.length === 0){
+      list.innerHTML = `<div class="empty"><i class="fa-solid fa-inbox" style="font-size:22px; margin-bottom:8px; display:block;"></i>Koi ${currentTab} nahi hai abhi. "Add" dabao.</div>`;
+      return;
+    }
+
+    list.innerHTML = items.map(item => `
+      <div class="card">
+        <div class="card-top">
+          <div class="avatar">${initials(item.name)}</div>
+          <div class="info">
+            <div class="name">${item.name}</div>
+            <div class="meta"><i class="fa-solid fa-location-dot"></i> ${item.area} &nbsp;•&nbsp; ${item.phone}</div>
+          </div>
+          <span class="badge ${item.status}">${item.status === "active" ? "Active" : "Inactive"}</span>
+        </div>
+        <div class="row-actions">
+          <div class="icon-btn" onclick="openModal('${item.id}')"><i class="fa-solid fa-pen"></i>Edit</div>
+          <div class="icon-btn" onclick="toggleStatus('${item.id}')"><i class="fa-solid fa-toggle-on"></i>${item.status === "active" ? "Deactivate" : "Activate"}</div>
+          <div class="icon-btn danger" onclick="deleteEntry('${item.id}')"><i class="fa-solid fa-trash"></i>Delete</div>
+        </div>
+      </div>
+    `).join("");
+  }
+
+  function renderMenuList(){
+    const items = data.menu;
+    document.getElementById("sectionTitle").textContent = "Menu Items";
+
+    const activeCount = items.filter(i=>i.status==="active").length;
+    const cookCount = new Set(items.map(i=>i.cook)).size;
+    document.getElementById("statRow").innerHTML = `
+      <div class="stat"><b>${items.length}</b><span>Total Items</span></div>
+      <div class="stat"><b>${activeCount}</b><span>Available</span></div>
+      <div class="stat"><b>${cookCount}</b><span>Cooks</span></div>
+    `;
+
+    const list = document.getElementById("list");
+    if(items.length === 0){
+      list.innerHTML = `<div class="empty"><i class="fa-solid fa-utensils" style="font-size:22px; margin-bottom:8px; display:block;"></i>Koi item nahi hai abhi. "Add" dabao.</div>`;
+      return;
+    }
+
+    const unitLabel = { kg: "/kg", piece: "/piece", cup: "/cup" };
+    list.innerHTML = items.map(item => `
+      <div class="card">
+        <div class="card-top">
+          <div class="avatar"><i class="fa-solid fa-utensils" style="font-size:13px;"></i></div>
+          <div class="info">
+            <div class="name">${item.name}</div>
+            <div class="meta">${item.cook} &nbsp;•&nbsp; ₹${item.price}${unitLabel[item.unit]}</div>
+          </div>
+          <span class="badge ${item.status}">${item.status === "active" ? "Available" : "Paused"}</span>
+        </div>
+        <div class="row-actions">
+          <div class="icon-btn" onclick="openModal('${item.id}')"><i class="fa-solid fa-pen"></i>Edit</div>
+          <div class="icon-btn" onclick="toggleStatus('${item.id}')"><i class="fa-solid fa-toggle-on"></i>${item.status === "active" ? "Pause" : "Resume"}</div>
+          <div class="icon-btn danger" onclick="deleteEntry('${item.id}')"><i class="fa-solid fa-trash"></i>Delete</div>
+        </div>
+      </div>
+    `).join("");
+  }
+
+  function switchTab(tab){
+    currentTab = tab;
+    document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.tab === tab));
+    document.getElementById("addBar").style.display = tab === "orders" ? "none" : "flex";
+    document.getElementById("calendarBox").style.display = tab === "orders" ? "block" : "none";
+    render();
+  }
+
+  // ---------- Orders + Calendar ----------
+  const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const DOW = ["S","M","T","W","T","F","S"];
+
+  function dateToISO(d){
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  }
+
+  function renderCalendar(){
+    const box = document.getElementById("calendarBox");
+    const year = calViewDate.getFullYear();
+    const month = calViewDate.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const startOffset = firstDay.getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const daysInPrevMonth = new Date(year, month, 0).getDate();
+    const todayStr = todayISO();
+
+    let cells = "";
+    for(let i = startOffset - 1; i >= 0; i--){
+      cells += `<div class="cal-day other-month">${daysInPrevMonth - i}</div>`;
+    }
+    for(let day = 1; day <= daysInMonth; day++){
+      const iso = `${year}-${String(month+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
+      const dayOrders = data.orders.filter(o => o.date === iso);
+      const hasPending = dayOrders.some(o => o.status === "Pending");
+      const hasConfirmed = dayOrders.some(o => o.status === "Confirmed");
+      let dot = "";
+      if(hasPending) dot = `<span class="cal-dot pending"></span>`;
+      else if(hasConfirmed) dot = `<span class="cal-dot confirmed"></span>`;
+      cells += `<div class="cal-day ${iso === todayStr ? "today" : ""} ${iso === selectedDate ? "selected" : ""}" onclick="selectDate('${iso}')">${day}${dot}</div>`;
+    }
+    const totalCells = startOffset + daysInMonth;
+    const trailing = (7 - (totalCells % 7)) % 7;
+    for(let i = 1; i <= trailing; i++){
+      cells += `<div class="cal-day other-month">${i}</div>`;
+    }
+
+    box.innerHTML = `
+      <div class="cal-box">
+        <div class="cal-head">
+          <div class="cal-nav" onclick="changeMonth(-1)"><i class="fa-solid fa-chevron-left"></i></div>
+          <b>${MONTH_NAMES[month]} ${year}</b>
+          <div class="cal-nav" onclick="changeMonth(1)"><i class="fa-solid fa-chevron-right"></i></div>
+        </div>
+        <div class="cal-grid">
+          ${DOW.map(d => `<div class="cal-dow">${d}</div>`).join("")}
+          ${cells}
+        </div>
+      </div>
+    `;
+  }
+
+  function changeMonth(delta){
+    calViewDate.setMonth(calViewDate.getMonth() + delta);
+    renderCalendar();
+  }
+
+  function selectDate(iso){
+    selectedDate = iso;
+    renderCalendar();
+    renderOrdersList();
+  }
+
+  function renderOrdersList(){
+    const dayOrders = data.orders.filter(o => o.date === selectedDate);
+    const pendingCount = dayOrders.filter(o => o.status === "Pending").length;
+    const confirmedCount = dayOrders.filter(o => o.status === "Confirmed").length;
+
+    document.getElementById("sectionTitle").textContent = `Orders — ${selectedDate}`;
+    document.getElementById("statRow").innerHTML = `
+      <div class="stat"><b>${dayOrders.length}</b><span>Is din ke orders</span></div>
+      <div class="stat"><b>${pendingCount}</b><span>Pending Approval</span></div>
+      <div class="stat"><b>${confirmedCount}</b><span>Confirmed</span></div>
+    `;
+
+    const list = document.getElementById("list");
+    if(dayOrders.length === 0){
+      list.innerHTML = `<div class="empty"><i class="fa-solid fa-calendar-xmark" style="font-size:22px; margin-bottom:8px; display:block;"></i>Is date pe koi order nahi hai.</div>`;
+      return;
+    }
+
+    list.innerHTML = dayOrders.map(o => `
+      <div class="order-card ${o.meal === "Urgent" ? "urgent" : ""}">
+        <div class="card-top">
+          <div class="info">
+            <div class="order-item">${o.item}${o.meal === "Urgent" ? '<span class="urgent-tag">URGENT</span>' : ""}</div>
+            <div class="order-meta">${o.customer} • ${o.cook} • ${o.area}</div>
+            <div class="order-meta"><i class="fa-solid ${o.type === "Pickup" ? "fa-store" : "fa-motorcycle"}"></i> ${o.type} • <i class="fa-solid ${o.meal === "Lunch" ? "fa-sun" : o.meal === "Dinner" ? "fa-moon" : "fa-bolt"}"></i> ${o.meal} • #${o.id}</div>
+          </div>
+          <span class="badge ${o.status === "Pending" ? "inactive" : o.status === "Declined" ? "inactive" : "active"}">${o.status}</span>
+        </div>
+        ${o.status === "Pending" ? `
+          <div class="row-actions">
+            <div class="icon-btn" style="color:var(--sage); border-color:#DCE7D4;" onclick="setOrderStatus('${o.id}','Confirmed')"><i class="fa-solid fa-check"></i>Approve</div>
+            <div class="icon-btn danger" onclick="setOrderStatus('${o.id}','Declined')"><i class="fa-solid fa-xmark"></i>Decline</div>
+          </div>
+        ` : ""}
+      </div>
+    `).join("");
+  }
+
+  function setOrderStatus(id, status){
+    if(!window.FIREBASE_CONFIGURED){
+      const o = data.orders.find(x => x.id === id);
+      if(o) o.status = status;
+      showToast(`Order #${id} — ${status} (local demo, save nahi hoga)`);
+      renderCalendar(); renderOrdersList();
+      return;
+    }
+    db.collection("orders").doc(id).update({ status })
+      .then(() => showToast(`Order #${id} — ${status}`))
+      .catch(err => showToast("Error: " + err.message));
+  }
+
+  function openModal(id = null){
+    if(currentTab === "menu"){ openMenuModal(id); return; }
+
+    document.getElementById("entryForm").style.display = "block";
+    document.getElementById("menuForm").style.display = "none";
+
+    editingId = id;
+    document.getElementById("f_name").value = "";
+    document.getElementById("f_area").value = "";
+    document.getElementById("f_phone").value = "";
+    document.getElementById("f_status").value = "active";
+    document.getElementById("formError").style.display = "none";
+    if(id){
+      const item = data[currentTab].find(i => i.id === id);
+      document.getElementById("modalTitle").textContent = `${item.name} ko Edit Karo`;
+      document.getElementById("f_name").value = item.name;
+      document.getElementById("f_area").value = item.area;
+      document.getElementById("f_phone").value = item.phone;
+      document.getElementById("f_status").value = item.status;
+    } else {
+      document.getElementById("modalTitle").textContent = currentTab === "cooks" ? "Naya Cook Add Karo" : "Naya Rider Add Karo";
+    }
+    document.getElementById("overlay").classList.add("open");
+  }
+
+  function openMenuModal(id = null){
+    document.getElementById("entryForm").style.display = "none";
+    document.getElementById("menuForm").style.display = "block";
+
+    editingId = id;
+    const cookSelect = document.getElementById("m_cook");
+    cookSelect.innerHTML = data.cooks.map(c => `<option value="${c.name}">${c.name}</option>`).join("");
+
+    document.getElementById("m_name").value = "";
+    document.getElementById("m_category").value = "thali";
+    document.getElementById("m_unit").value = "kg";
+    document.getElementById("m_price").value = "";
+    document.getElementById("m_status").value = "active";
+    document.getElementById("menuFormError").style.display = "none";
+
+    if(id){
+      const item = data.menu.find(i => i.id === id);
+      document.getElementById("modalTitle").textContent = `${item.name} ko Edit Karo`;
+      document.getElementById("m_name").value = item.name;
+      cookSelect.value = item.cook;
+      document.getElementById("m_category").value = item.category;
+      document.getElementById("m_unit").value = item.unit;
+      document.getElementById("m_price").value = item.price;
+      document.getElementById("m_status").value = item.status;
+    } else {
+      document.getElementById("modalTitle").textContent = "Naya Item Add Karo";
+    }
+    document.getElementById("overlay").classList.add("open");
+  }
+
+  function closeModal(){
+    document.getElementById("overlay").classList.remove("open");
+    editingId = null;
+  }
+
+  function saveEntry(){
+    const name = document.getElementById("f_name").value.trim();
+    const area = document.getElementById("f_area").value.trim();
+    const phone = document.getElementById("f_phone").value.trim();
+    const status = document.getElementById("f_status").value;
+
+    const errorBox = document.getElementById("formError");
+    if(!name || !area || !phone){
+      errorBox.textContent = "Naam, area aur phone — teeno bharna zaroori hai.";
+      errorBox.style.display = "block";
+      return;
+    }
+    errorBox.style.display = "none";
+
+    const payload = { name, area, phone, status };
+
+    if(!window.FIREBASE_CONFIGURED){
+      if(editingId){
+        Object.assign(data[currentTab].find(i => i.id === editingId), payload);
+      } else {
+        data[currentTab].push({ id: "local" + Date.now(), ...payload });
+      }
+      showToast((editingId ? "Update" : "Add") + " ho gaya (local demo, save nahi hoga)");
+      closeModal();
+      render();
+      return;
+    }
+
+    const promise = editingId
+      ? db.collection(currentTab).doc(editingId).update(payload)
+      : db.collection(currentTab).add(payload);
+
+    promise
+      .then(() => showToast(editingId ? "Update ho gaya ✓" : "Add ho gaya ✓"))
+      .catch(err => showToast("Error: " + err.message));
+    closeModal();
+  }
+
+  function saveMenuItem(){
+    const name = document.getElementById("m_name").value.trim();
+    const cook = document.getElementById("m_cook").value;
+    const category = document.getElementById("m_category").value;
+    const unit = document.getElementById("m_unit").value;
+    const price = parseFloat(document.getElementById("m_price").value);
+    const status = document.getElementById("m_status").value;
+
+    const errorBox = document.getElementById("menuFormError");
+    if(!name || !cook || !price || price <= 0){
+      errorBox.textContent = "Item ka naam, cook aur sahi price bharna zaroori hai.";
+      errorBox.style.display = "block";
+      return;
+    }
+    errorBox.style.display = "none";
+
+    const payload = { name, cook, category, unit, price, status };
+
+    if(!window.FIREBASE_CONFIGURED){
+      if(editingId){
+        Object.assign(data.menu.find(i => i.id === editingId), payload);
+      } else {
+        data.menu.push({ id: "local" + Date.now(), ...payload });
+      }
+      showToast((editingId ? "Item update" : "Item add") + " ho gaya (local demo, save nahi hoga)");
+      closeModal();
+      render();
+      return;
+    }
+
+    const promise = editingId
+      ? db.collection("menu").doc(editingId).update(payload)
+      : db.collection("menu").add(payload);
+
+    promise
+      .then(() => showToast(editingId ? "Item update ho gaya ✓" : "Item add ho gaya ✓"))
+      .catch(err => showToast("Error: " + err.message));
+    closeModal();
+  }
+
+  function toggleStatus(id){
+    const item = data[currentTab].find(i => i.id === id);
+    const newStatus = item.status === "active" ? "inactive" : "active";
+
+    if(!window.FIREBASE_CONFIGURED){
+      item.status = newStatus;
+      showToast(`${item.name} ab ${newStatus} hai (local demo)`);
+      render();
+      return;
+    }
+
+    db.collection(currentTab).doc(id).update({ status: newStatus })
+      .then(() => showToast(`${item.name} ab ${newStatus === "active" ? "active" : "inactive"} hai`))
+      .catch(err => showToast("Error: " + err.message));
+  }
+
+  function deleteEntry(id){
+    const item = data[currentTab].find(i => i.id === id);
+    if(!confirm(`${item.name} ko delete karna hai?`)) return;
+
+    if(!window.FIREBASE_CONFIGURED){
+      data[currentTab] = data[currentTab].filter(i => i.id !== id);
+      showToast("Delete ho gaya (local demo)");
+      render();
+      return;
+    }
+
+    db.collection(currentTab).doc(id).delete()
+      .then(() => showToast("Delete ho gaya"))
+      .catch(err => showToast("Error: " + err.message));
+  }
+
+  function showToast(msg){
+    const toast = document.getElementById("toast");
+    toast.textContent = msg;
+    toast.classList.add("show");
+    setTimeout(()=> toast.classList.remove("show"), 1800);
+  }
+
+  render();
+</script>
+
+</body>
+</html>
