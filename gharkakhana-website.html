@@ -1,0 +1,1448 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#2B1B17">
+<title>GharKaKhana — Ghar ke cooks se, seedha aapki thali tak</title>
+
+<!-- PWA: makes "Add to Home Screen" work on both Android and iPhone -->
+<link rel="manifest" href="manifest.json">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="GharKaKhana">
+<link rel="apple-touch-icon" href="icon-192.png">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<!-- Firebase (Firestore) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script src="firebase-config.js"></script>
+<style>
+  :root{
+    --charcoal:#2B1B17;
+    --card:#3D2A22;
+    --turmeric:#E8A93D;
+    --chili:#B54834;
+    --cream:#FBF3E7;
+    --tan:#EFE1CC;
+    --sage:#7A8B69;
+    --text-muted:#5A4632;
+    --text-soft:#8A7256;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{
+    font-family:'Inter', sans-serif;
+    background:var(--cream);
+    color:var(--charcoal);
+    line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3{font-family:'Fraunces', serif; font-weight:700; letter-spacing:-0.01em;}
+  a{text-decoration:none; color:inherit;}
+  img{max-width:100%; display:block;}
+  .wrap{max-width:480px; margin:0 auto; padding:0 20px;}
+
+  /* Top bar */
+  .topbar{
+    background:var(--charcoal); color:var(--cream);
+    padding:14px 0; position:sticky; top:0; z-index:50;
+    box-shadow:0 4px 14px rgba(0,0,0,0.18);
+  }
+  .topbar .wrap{display:flex; align-items:center; justify-content:space-between;}
+  .brand{font-family:'Fraunces', serif; font-weight:700; font-size:18px; display:flex; align-items:center; gap:6px;}
+  .brand i{color:var(--turmeric);}
+  .loc{font-size:11px; color:#C9B79C; display:flex; align-items:center; gap:4px;}
+
+  /* Hero */
+  .hero{
+    background:radial-gradient(circle at 15% 0%, #3D2A22 0%, var(--charcoal) 55%);
+    color:var(--cream);
+    padding:28px 0 40px; border-radius:0 0 32px 32px;
+    position:relative; overflow:hidden;
+  }
+  .eyebrow{
+    font-size:11px; text-transform:uppercase; letter-spacing:0.18em;
+    color:var(--turmeric); font-weight:600; margin-bottom:10px;
+  }
+  .hero h1{font-size:28px; line-height:1.15; margin-bottom:12px;}
+  .hero p{font-size:13.5px; color:#D9C7AE; margin-bottom:20px; max-width:38ch;}
+  .steam{position:absolute; right:-30px; top:-30px; font-size:140px; opacity:0.06; color:var(--turmeric);}
+
+  .search-bar{
+    background:var(--cream); border-radius:14px; padding:13px 14px;
+    display:flex; align-items:center; gap:10px; margin-bottom:14px;
+    box-shadow:0 6px 18px rgba(0,0,0,0.2);
+  }
+  .search-bar i{color:var(--chili); font-size:14px;}
+  .search-bar span{font-size:12.5px; color:var(--text-soft); font-weight:500;}
+
+  .cta-row{display:flex; gap:10px;}
+
+  .delivery-badge{
+    display:inline-flex; align-items:center; gap:7px;
+    background:var(--turmeric); color:var(--charcoal);
+    font-size:12px; font-weight:800; padding:8px 14px; border-radius:999px;
+    margin-bottom:16px;
+  }
+  .free-delivery-strip{
+    background:#EAF0E4; border:1px solid #D3E0C6; border-radius:16px;
+    padding:12px 14px; display:flex; flex-direction:column; gap:8px; margin-top:-6px;
+  }
+  .fd-item{display:flex; align-items:center; gap:8px; font-size:11.5px; color:var(--text-muted);}
+  .fd-item i{color:var(--sage); font-size:14px; width:16px; text-align:center;}
+  .fd-item b{color:var(--sage);}
+  .chip i{margin-right:4px;}
+
+  .cat-icons{display:flex; gap:16px; overflow-x:auto; padding-bottom:4px; scrollbar-width:none;}
+  .cat-icons::-webkit-scrollbar{display:none;}
+  .cat-icon{flex:0 0 auto; display:flex; flex-direction:column; align-items:center; gap:6px; cursor:pointer; width:64px;}
+  .cat-icon-circle{
+    width:56px; height:56px; border-radius:50%; background:white; border:1px solid var(--tan);
+    display:flex; align-items:center; justify-content:center; font-size:20px; color:var(--text-muted);
+    box-shadow:0 3px 10px rgba(43,27,23,0.06); transition:all .15s;
+  }
+  .cat-icon span{font-size:10.5px; font-weight:600; color:var(--text-muted); text-align:center;}
+  .cat-icon.active .cat-icon-circle{background:var(--chili); border-color:var(--chili); color:var(--cream); transform:scale(1.06);}
+  .cat-icon.active span{color:var(--chili); font-weight:700;}
+
+  .offers-scroll{display:flex; gap:12px; overflow-x:auto; padding-bottom:4px; scrollbar-width:none;}
+  .offers-scroll::-webkit-scrollbar{display:none;}
+  .offer-card{
+    flex:0 0 auto; width:230px; border-radius:18px; padding:16px; color:var(--cream);
+    display:flex; flex-direction:column; justify-content:space-between; min-height:100px;
+    box-shadow:0 6px 18px rgba(43,27,23,0.15);
+  }
+  .offer-card.o1{background:linear-gradient(135deg, #B54834, #7A2E1E);}
+  .offer-card.o2{background:linear-gradient(135deg, #2B7A5C, #1A4A38);}
+  .offer-card.o3{background:linear-gradient(135deg, #C1633E, #8A3A22);}
+  .offer-card .oc-title{font-size:14px; font-weight:800; font-family:'Fraunces',serif;}
+  .offer-card .oc-sub{font-size:10.5px; color:rgba(251,243,231,0.85); margin-top:4px;}
+
+  .combo-item{
+    display:flex; align-items:center; gap:10px; background:var(--card);
+    border-radius:12px; padding:10px 12px; cursor:pointer; border:1.5px solid transparent;
+  }
+  .combo-item.selected{border-color:var(--turmeric); background:#4A3527;}
+  .combo-item .ci-check{
+    width:20px; height:20px; border-radius:6px; border:1.5px solid #6B5443; flex:0 0 auto;
+    display:flex; align-items:center; justify-content:center; font-size:11px; color:var(--turmeric);
+  }
+  .combo-item.selected .ci-check{background:var(--turmeric); border-color:var(--turmeric); color:var(--charcoal);}
+  .combo-item .ci-body{flex:1; min-width:0;}
+  .combo-item .ci-title{font-size:12.5px; font-weight:700; color:var(--cream);}
+  .combo-item .ci-sub{font-size:10.5px; color:#C9B79C; margin-top:1px;}
+  .combo-item .ci-rate{font-size:12px; font-weight:700; color:var(--turmeric); white-space:nowrap;}
+
+  .cook-acc{background:var(--card); border-radius:14px; padding:4px 12px; overflow:hidden;}
+  .cook-acc summary{
+    list-style:none; cursor:pointer; padding:12px 2px; font-size:13px; font-weight:700;
+    display:flex; align-items:center; gap:8px; color:var(--cream);
+  }
+  .cook-acc summary::-webkit-details-marker{display:none;}
+  .cook-acc summary i{color:var(--turmeric);}
+  .cook-acc summary::after{content:"\f078"; font-family:"Font Awesome 6 Free"; font-weight:900; margin-left:auto; font-size:11px; color:#8A7256;}
+  .cook-acc[open] summary::after{content:"\f077";}
+  .cook-acc-body{display:flex; flex-direction:column; gap:8px; padding-bottom:10px;}
+  .combo-row{
+    display:flex; align-items:center; gap:10px; background:#33221B; border-radius:10px; padding:9px 10px;
+    border:1.5px solid transparent;
+  }
+  .combo-row.selected{border-color:var(--turmeric);}
+  .combo-row .ci-body{flex:1; min-width:0;}
+  .combo-row .ci-title{font-size:12px; font-weight:700; color:var(--cream);}
+  .combo-row .ci-sub{font-size:10.5px; color:#C9B79C; margin-top:1px;}
+  .ci-ratio{
+    display:inline-flex; align-items:center; gap:3px; background:rgba(232,169,61,0.18);
+    color:var(--turmeric); font-size:10px; font-weight:800; padding:2px 8px; border-radius:999px; margin-top:4px;
+  }
+  .combo-qty-text{color:var(--cream); font-weight:700;}
+  .combo-qty{
+    padding:6px 8px; border-radius:8px; border:none; font-size:11.5px; font-weight:700;
+    background:var(--cream); color:var(--charcoal); font-family:'Inter',sans-serif;
+  }
+  .btn{
+    flex:1; text-align:center; padding:13px 16px; border-radius:14px;
+    font-weight:600; font-size:13.5px; border:none; cursor:pointer;
+    transition:transform 0.15s ease;
+  }
+  .btn:active{transform:scale(0.97);}
+  .btn-primary{background:var(--chili); color:var(--cream);}
+  .btn-secondary{background:transparent; color:var(--cream); border:1px solid #5A4632;}
+  .btn i{margin-right:6px;}
+
+  /* Sections */
+  section{padding:32px 0;}
+  .section-head{display:flex; align-items:baseline; justify-content:space-between; margin-bottom:16px;}
+  .section-head h2{font-size:19px;}
+  .section-head .sub{font-size:11.5px; color:var(--text-soft); margin-top:2px;}
+  .link-more{font-size:11.5px; font-weight:600; color:var(--chili);}
+
+  /* Localities chips */
+  .chips{display:flex; gap:8px; overflow-x:auto; padding-bottom:4px; scrollbar-width:none;}
+  .chips::-webkit-scrollbar{display:none;}
+  .chip{
+    flex:0 0 auto; background:white; border:1px solid var(--tan);
+    padding:8px 14px; border-radius:999px; font-size:12px; font-weight:600;
+    color:var(--text-muted); white-space:nowrap; box-shadow:0 2px 8px rgba(43,27,23,0.05);
+  }
+  .chip.active{background:var(--charcoal); color:var(--cream); border-color:var(--charcoal); box-shadow:0 4px 12px rgba(43,27,23,0.2);}
+
+  .occ-chip{
+    flex:0 0 auto; display:flex; align-items:center; gap:7px; padding:9px 15px;
+    border-radius:999px; font-size:12px; font-weight:700; white-space:nowrap; color:white;
+    box-shadow:0 4px 12px rgba(0,0,0,0.12);
+  }
+  .occ-chip i{font-size:12px;}
+  .occ-1{background:linear-gradient(135deg,#D2597A,#A83457);}
+  .occ-2{background:linear-gradient(135deg,#8B5FBF,#5E3A8C);}
+  .occ-3{background:linear-gradient(135deg,#2B9C8F,#186B62);}
+  .occ-4{background:linear-gradient(135deg,#DBA13A,#A6701E);}
+  .occ-5{background:linear-gradient(135deg,#4C9A4C,#2E6B2E);}
+  .occ-6{background:linear-gradient(135deg,#5A6B8C,#333F58);}
+
+  /* Dish cards */
+  .cook-group-head{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:14px 2px 8px; margin-top:6px;
+  }
+  .cook-group-head:first-child{margin-top:0;}
+  .cgh-left{display:flex; align-items:center; gap:8px;}
+  .cgh-left i{color:var(--chili); font-size:14px;}
+  .cgh-name{font-family:'Fraunces',serif; font-weight:700; font-size:14px; color:var(--charcoal);}
+  .cgh-area{font-size:10.5px; color:var(--text-soft); margin-top:1px; margin-left:22px;}
+  .cgh-rating{font-size:11px; font-weight:700; color:var(--turmeric); display:flex; align-items:center; gap:3px; white-space:nowrap;}
+
+  .mode-toggle{display:flex; gap:6px; margin-top:8px;}
+  .mode-btn{
+    flex:1; text-align:center; padding:6px; border-radius:8px; font-size:10.5px; font-weight:700;
+    background:var(--cream); border:1px solid var(--tan); color:var(--text-muted); cursor:pointer;
+  }
+  .mode-btn.active{background:var(--charcoal); color:var(--cream); border-color:var(--charcoal);}
+
+  .dish-card{
+    background:white; border:1px solid var(--tan); border-radius:20px;
+    padding:0; display:flex; flex-direction:column; margin-bottom:14px; overflow:hidden;
+    box-shadow:0 4px 16px rgba(43,27,23,0.06); transition:transform .15s, box-shadow .15s;
+  }
+  .dish-card:active{transform:scale(0.985);}
+  .dish-media{
+    position:relative; height:120px; display:flex; align-items:center; justify-content:center;
+    background:linear-gradient(135deg, #4A3527, #2B1B17);
+  }
+  .dish-media.cat-thali{background:linear-gradient(135deg, #C1633E, #8A3A22);}
+  .dish-media.cat-roti{background:linear-gradient(135deg, #B8935A, #7A5A32);}
+  .dish-media.cat-nashta{background:linear-gradient(135deg, #D9A441, #A6701E);}
+  .dish-media.cat-chai{background:linear-gradient(135deg, #6B4A34, #3D2A22);}
+  .dish-media.cat-mithai{background:linear-gradient(135deg, #C24B6B, #7A2D45);}
+  .dm-icon{font-size:40px; color:rgba(255,255,255,0.9);}
+  .dm-vegdot{
+    position:absolute; top:10px; left:10px; width:16px; height:16px; border-radius:4px;
+    background:white; border:2px solid var(--sage); display:flex; align-items:center; justify-content:center;
+  }
+  .dm-vegdot::after{content:""; width:6px; height:6px; border-radius:50%; background:var(--sage);}
+  .dm-vegdot.nonveg{border-color:var(--chili);}
+  .dm-vegdot.nonveg::after{background:var(--chili);}
+  .dm-rating{
+    position:absolute; top:10px; right:10px; background:rgba(255,255,255,0.95); color:var(--charcoal);
+    font-size:10.5px; font-weight:800; padding:4px 8px; border-radius:8px; display:flex; align-items:center; gap:3px;
+  }
+  .dm-rating i{color:var(--turmeric); font-size:9px;}
+  .dm-badge{
+    position:absolute; bottom:0; left:0; background:var(--turmeric); color:var(--charcoal);
+    font-size:9.5px; font-weight:800; padding:4px 10px; border-radius:0 8px 0 0; text-transform:uppercase; letter-spacing:0.03em;
+  }
+  .dish-thumb{display:none;}
+  .dish-info{flex:1; min-width:0; padding:12px 14px 14px;}
+  .dish-top{display:flex; justify-content:space-between; align-items:flex-start; gap:8px;}
+  .dish-name{font-size:14px; font-weight:700;}
+  .dish-cook{font-size:10.8px; color:var(--text-soft); margin-top:1px;}
+  .rating{font-size:10.8px; font-weight:700; color:var(--turmeric); display:flex; align-items:center; gap:3px; white-space:nowrap;}
+  .dish-bottom{display:flex; justify-content:space-between; align-items:center; margin-top:8px;}
+  .price{font-size:14px; font-weight:700;}
+  .price .unit{font-size:10.5px; font-weight:600; color:var(--text-soft);}
+  .add-btn{
+    background:var(--cream); border:1px solid var(--tan); color:var(--chili);
+    font-size:11px; font-weight:700; padding:6px 14px; border-radius:999px; cursor:pointer;
+  }
+  .add-btn.full{
+    width:100%; margin-top:10px; padding:11px 14px; text-align:center;
+    background:var(--chili); color:var(--cream); border:none; box-shadow:0 6px 16px rgba(181,72,52,0.3);
+    letter-spacing:0.01em;
+  }
+  .qty-row{
+    display:flex; align-items:center; justify-content:space-between;
+    margin-top:10px; padding-top:10px; border-top:1px dashed var(--tan);
+  }
+  .qty-row label{font-size:11px; font-weight:600; color:var(--text-muted);}
+  .qty-select{
+    padding:6px 10px; border-radius:8px; border:1px solid var(--tan);
+    font-size:12px; font-weight:600; background:var(--cream); color:var(--charcoal);
+    font-family:'Inter',sans-serif;
+  }
+  .estimate-row{
+    display:flex; align-items:center; justify-content:space-between;
+    margin-top:8px; font-size:11px;
+  }
+  .est-people{color:var(--sage); font-weight:600; display:flex; align-items:center; gap:4px;}
+  .est-total{color:var(--charcoal); font-weight:700;}
+
+  /* How it works */
+  .steps{display:flex; flex-direction:column; gap:14px;}
+  .step{display:flex; gap:14px; align-items:flex-start;}
+  .step-num{
+    width:32px; height:32px; border-radius:50%; background:var(--charcoal); color:var(--turmeric);
+    display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px; flex:0 0 auto;
+  }
+  .step-title{font-size:13.5px; font-weight:700; margin-bottom:2px;}
+  .step-desc{font-size:12px; color:var(--text-soft);}
+
+  /* Cook CTA banner */
+  .cook-banner{
+    background:linear-gradient(135deg, var(--card), var(--charcoal));
+    color:var(--cream); border-radius:22px; padding:22px 20px;
+    display:flex; align-items:center; gap:16px;
+  }
+  .cook-banner i{font-size:32px; color:var(--turmeric); flex:0 0 auto;}
+  .cook-banner h3{font-size:15px; margin-bottom:4px;}
+  .cook-banner p{font-size:11.5px; color:#C9B79C;}
+  .cook-banner .btn{margin-top:12px;}
+
+  /* Footer */
+  footer{
+    background:var(--charcoal); color:#C9B79C; padding:28px 0 90px; margin-top:10px;
+  }
+  footer .brand{color:var(--cream); margin-bottom:8px;}
+  footer p{font-size:11.5px; margin-bottom:14px;}
+  .foot-links{display:flex; gap:16px; font-size:11.5px; flex-wrap:wrap; margin-bottom:14px;}
+  .foot-social{display:flex; gap:12px; font-size:16px;}
+  .foot-social i{color:var(--turmeric);}
+
+  /* Sticky bottom order bar (mobile app feel) */
+  .sticky-cta{
+    position:fixed; bottom:14px; left:0; right:0; z-index:60;
+    display:flex; justify-content:center; pointer-events:none;
+  }
+  .sticky-cta .inner{
+    pointer-events:auto; background:var(--chili); color:var(--cream);
+    padding:13px 22px; border-radius:999px; font-size:13px; font-weight:700;
+    display:flex; align-items:center; gap:8px; box-shadow:0 10px 30px rgba(0,0,0,0.25);
+    border:none; cursor:pointer;
+  }
+
+  /* Cart / checkout modal */
+  .overlay{
+    position:fixed; inset:0; background:rgba(43,27,23,0.55); display:none;
+    align-items:flex-end; justify-content:center; z-index:100;
+  }
+  .overlay.open{display:flex;}
+  .modal{
+    background:var(--cream); width:100%; max-width:480px; max-height:85vh; overflow-y:auto;
+    border-radius:24px 24px 0 0; padding:20px 18px 26px; animation:slideup .2s ease;
+  }
+  @keyframes slideup{from{transform:translateY(30px); opacity:0;} to{transform:translateY(0); opacity:1;}}
+  .modal h3{font-size:16px; margin-bottom:14px;}
+  .cart-item{
+    display:flex; justify-content:space-between; align-items:center;
+    background:white; border:1px solid var(--tan); border-radius:14px; padding:12px; margin-bottom:10px;
+  }
+  .cart-item .ci-name{font-size:12.5px; font-weight:700;}
+  .cart-item .ci-meta{font-size:10.5px; color:var(--text-soft); margin-top:2px;}
+  .cart-item .ci-price{font-size:13px; font-weight:700;}
+  .cart-remove{color:var(--chili); font-size:14px; margin-left:10px; cursor:pointer;}
+  .cart-empty{text-align:center; padding:30px 10px; color:var(--text-soft); font-size:12.5px;}
+  .cart-total{
+    display:flex; justify-content:space-between; align-items:center; font-size:14.5px; font-weight:700;
+    padding:14px 2px; border-top:1px dashed var(--tan); margin-top:6px;
+  }
+  .fulfil-toggle{display:flex; gap:10px; margin:14px 0;}
+  .fulfil-option{
+    flex:1; border:1.5px solid var(--tan); border-radius:14px; padding:12px; text-align:center;
+    cursor:pointer; font-size:12.5px; font-weight:700; color:var(--text-muted);
+  }
+  .fulfil-option.selected{border-color:var(--chili); background:#F6E2DC; color:var(--chili);}
+  .fulfil-option i{display:block; font-size:18px; margin-bottom:6px;}
+  .field{margin-bottom:12px;}
+  .field label{font-size:11px; font-weight:600; color:var(--text-muted); display:block; margin-bottom:5px;}
+  .field input, .field textarea{
+    width:100%; padding:11px 12px; border-radius:10px; border:1px solid var(--tan);
+    font-size:13px; font-family:'Inter',sans-serif; background:white; color:var(--charcoal);
+  }
+  .modal-actions{display:flex; gap:10px; margin-top:16px;}
+  .qr-box{
+    background:white; border:1px solid var(--tan); border-radius:18px; padding:20px;
+    display:flex; flex-direction:column; align-items:center; margin:14px 0;
+  }
+  #qrcode{margin:10px 0;}
+  .qr-amount{font-size:20px; font-weight:700; color:var(--charcoal); margin-top:6px;}
+  .qr-note{font-size:11px; color:var(--text-soft); text-align:center; margin-top:4px;}
+  .order-success{text-align:center; padding:20px 10px;}
+  .order-success i{font-size:42px; color:var(--sage); margin-bottom:10px;}
+
+  @media (min-width:481px){
+    .wrap{max-width:520px;}
+  }
+</style>
+</head>
+<body>
+
+  <div class="topbar">
+    <div class="wrap">
+      <div class="brand"><i class="fa-solid fa-bowl-food"></i> GharKaKhana</div>
+      <div class="loc"><i class="fa-solid fa-location-dot"></i> Shah-e-Alam</div>
+    </div>
+  </div>
+
+  <div class="hero">
+    <i class="fa-solid fa-utensils steam"></i>
+    <div class="wrap">
+      <p class="eyebrow">Ghar jaisa khana, ghar ke paas</p>
+      <h1>Local cooks se, seedha aapki thali tak</h1>
+      <p>Apne aas paas ke ghar ke cooks se taaza, home-style khana order karo — bina bahar khaye.</p>
+
+      <div class="delivery-badge">
+        <i class="fa-solid fa-truck-fast"></i> 40 km tak delivery
+      </div>
+
+      <div class="search-bar">
+        <i class="fa-solid fa-magnifying-glass"></i>
+        <span>Dish, cook ya locality search karo...</span>
+      </div>
+
+      <div class="cta-row">
+        <button class="btn btn-primary"><i class="fa-solid fa-bag-shopping"></i>Order karo</button>
+        <button class="btn btn-secondary"><i class="fa-brands fa-whatsapp"></i>WhatsApp</button>
+      </div>
+    </div>
+  </div>
+
+  <section style="padding-bottom:0;">
+    <div class="wrap">
+      <div class="offers-scroll">
+        <div class="offer-card o1">
+          <div class="oc-title">Pehle order pe 20% OFF</div>
+          <div class="oc-sub">Naye customers ke liye — code: GHAR20</div>
+        </div>
+        <div class="offer-card o2">
+          <div class="oc-title">40 km tak FREE delivery</div>
+          <div class="oc-sub">₹999 se upar ke order pe</div>
+        </div>
+        <div class="offer-card o3">
+          <div class="oc-title">Bulk order? Extra discount</div>
+          <div class="oc-sub">Mangni, party, niyaz ke liye poocho</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section style="padding-bottom:0;">
+    <div class="wrap">
+      <div class="free-delivery-strip">
+        <div class="fd-item"><i class="fa-solid fa-kaaba"></i><span>Haji sahab ke liye <b>FREE delivery</b></span></div>
+        <div class="fd-item"><i class="fa-solid fa-bus"></i><span>Tour operators ke liye <b>FREE delivery</b></span></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <div class="section-head">
+        <div>
+          <h2>Kis mauke ke liye?</h2>
+          <div class="sub">Har occasion ke hisaab se order</div>
+        </div>
+      </div>
+      <div class="chips">
+        <div class="occ-chip occ-1"><i class="fa-solid fa-ring"></i> Mangni</div>
+        <div class="occ-chip occ-2"><i class="fa-solid fa-cake-candles"></i> Birthday Party</div>
+        <div class="occ-chip occ-3"><i class="fa-solid fa-mosque"></i> Ziyarat</div>
+        <div class="occ-chip occ-4"><i class="fa-solid fa-hands-praying"></i> Niyaz</div>
+        <div class="occ-chip occ-5"><i class="fa-solid fa-tree"></i> Farmhouse Delivery</div>
+        <div class="occ-chip occ-6"><i class="fa-solid fa-dove"></i> Yaad</div>
+      </div>
+    </div>
+  </section>
+
+  <section style="padding-top:0;">
+    <div class="wrap">
+      <div class="section-head">
+        <div>
+          <h2>Apni locality chuno</h2>
+          <div class="sub">Sirf aas paas ke cooks dikhenge</div>
+        </div>
+      </div>
+      <div class="chips">
+        <div class="chip active">Shah-e-Alam</div>
+        <div class="chip">Gomtipur</div>
+        <div class="chip">Bapunagar</div>
+        <div class="chip">Juhapura</div>
+        <div class="chip">Jamalpur</div>
+        <div class="chip">Kalupur</div>
+        <div class="chip">Dariyapur</div>
+        <div class="chip">Shahpur</div>
+        <div class="chip">Vatva</div>
+      </div>
+    </div>
+  </section>
+
+  <section style="padding-top:0;">
+    <div class="wrap">
+      <div class="section-head">
+        <div>
+          <h2>Kya khana hai?</h2>
+          <div class="sub">Category se browse karo</div>
+        </div>
+      </div>
+      <div class="cat-icons" id="categoryChips">
+        <div class="cat-icon active" data-cat="all" onclick="filterCategory('all')">
+          <div class="cat-icon-circle"><i class="fa-solid fa-border-all"></i></div>
+          <span>Sab kuch</span>
+        </div>
+        <div class="cat-icon" data-cat="thali" onclick="filterCategory('thali')">
+          <div class="cat-icon-circle"><i class="fa-solid fa-bowl-food"></i></div>
+          <span>Thali</span>
+        </div>
+        <div class="cat-icon" data-cat="roti" onclick="filterCategory('roti')">
+          <div class="cat-icon-circle"><i class="fa-solid fa-bread-slice"></i></div>
+          <span>Roti/Mande</span>
+        </div>
+        <div class="cat-icon" data-cat="nashta" onclick="filterCategory('nashta')">
+          <div class="cat-icon-circle"><i class="fa-solid fa-cookie-bite"></i></div>
+          <span>Nashta</span>
+        </div>
+        <div class="cat-icon" data-cat="chai" onclick="filterCategory('chai')">
+          <div class="cat-icon-circle"><i class="fa-solid fa-mug-hot"></i></div>
+          <span>Chai</span>
+        </div>
+        <div class="cat-icon" data-cat="mithai" onclick="filterCategory('mithai')">
+          <div class="cat-icon-circle"><i class="fa-solid fa-candy-cane"></i></div>
+          <span>Mithai</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section style="padding-top:0;">
+    <div class="wrap">
+      <div class="section-head">
+        <div>
+          <h2>Aaj ka taaza khana</h2>
+          <div class="sub">Live cooks near you</div>
+        </div>
+        <a class="link-more" href="#">Sab dekho →</a>
+      </div>
+
+      <div class="cook-group-head">
+        <div class="cgh-left"><i class="fa-solid fa-kitchen-set"></i><div><div class="cgh-name">Naseem Ben ki Rasoi</div><div class="cgh-area" style="margin-left:0;">Shah-e-Alam</div></div></div>
+        <div class="cgh-rating"><i class="fa-solid fa-star"></i> 4.8</div>
+      </div>
+      <div class="dish-card" data-price="260" data-unit="kg" data-cat="thali">
+        <div class="dish-media cat-thali"><i class="fa-solid fa-leaf dm-icon"></i><span class="dm-vegdot "></span><span class="dm-rating"><i class="fa-solid fa-star"></i> 4.8</span></div>
+        <div class="dish-info">
+          <div class="dish-top">
+            <div>
+              <div class="dish-name">Gujarati Thali</div>
+              <div class="dish-cook">Naseem Ben ki Rasoi • Shah-e-Alam</div>
+            </div>
+            <div class="rating"><i class="fa-solid fa-star"></i> 4.8</div>
+          </div>
+          <div class="dish-bottom">
+            <div class="price">₹260 <span class="unit">/kg</span></div>
+          </div>
+          <div class="qty-row">
+            <label>Quantity</label>
+            <select class="qty-select" onchange="updateEstimate(this)">
+              <option value="1">1 kg</option>
+              <option value="2">2 kg</option>
+              <option value="3">3 kg</option>
+              <option value="4">4 kg</option>
+              <option value="5">5 kg</option>
+              <option value="10">10 kg</option>
+              <option value="20">20 kg</option>
+              <option value="50">50 kg</option>
+            </select>
+          </div>
+          <div class="estimate-row">
+            <span class="est-people"><i class="fa-solid fa-users"></i> <span class="est-people-text">~4 logo ke liye</span></span>
+            <span class="est-total">Total: <span class="est-total-amount">₹260</span></span>
+          </div>
+          <button class="add-btn full" onclick="addToCart(this)">+ Cart mein add karo</button>
+        </div>
+      </div>
+
+      <div class="cook-group-head">
+        <div class="cgh-left"><i class="fa-solid fa-kitchen-set"></i><div><div class="cgh-name">Ammi's Kitchen</div><div class="cgh-area" style="margin-left:0;">Jamalpur</div></div></div>
+        <div class="cgh-rating"><i class="fa-solid fa-star"></i> 4.9</div>
+      </div>
+      <div class="dish-card" data-price="380" data-unit="kg" data-cat="thali">
+        <div class="dish-media cat-thali"><i class="fa-solid fa-drumstick-bite dm-icon"></i><span class="dm-vegdot nonveg"></span><span class="dm-rating"><i class="fa-solid fa-star"></i> 4.9</span></div>
+        <div class="dish-info">
+          <div class="dish-top">
+            <div>
+              <div class="dish-name">Chicken Handi</div>
+              <div class="dish-cook">Ammi's Kitchen • Jamalpur</div>
+            </div>
+            <div class="rating"><i class="fa-solid fa-star"></i> 4.9</div>
+          </div>
+          <div class="dish-bottom">
+            <div class="price">₹380 <span class="unit">/kg</span></div>
+          </div>
+          <div class="qty-row">
+            <label>Quantity</label>
+            <select class="qty-select" onchange="updateEstimate(this)">
+              <option value="1">1 kg</option>
+              <option value="2">2 kg</option>
+              <option value="3">3 kg</option>
+              <option value="4">4 kg</option>
+              <option value="5">5 kg</option>
+              <option value="10">10 kg</option>
+              <option value="20">20 kg</option>
+              <option value="50">50 kg</option>
+            </select>
+          </div>
+          <div class="estimate-row">
+            <span class="est-people"><i class="fa-solid fa-users"></i> <span class="est-people-text">~4 logo ke liye</span></span>
+            <span class="est-total">Total: <span class="est-total-amount">₹380</span></span>
+          </div>
+          <button class="add-btn full" onclick="addToCart(this)">+ Cart mein add karo</button>
+        </div>
+      </div>
+
+      <div class="cook-group-head">
+        <div class="cgh-left"><i class="fa-solid fa-kitchen-set"></i><div><div class="cgh-name">Ghar Ka Swaad</div><div class="cgh-area" style="margin-left:0;">Bapunagar</div></div></div>
+        <div class="cgh-rating"><i class="fa-solid fa-star"></i> 4.7</div>
+      </div>
+      <div class="dish-card" data-price="180" data-unit="kg" data-cat="roti" data-percapita="true" data-mode="unit">
+        <div class="dish-media cat-roti"><i class="fa-solid fa-leaf dm-icon"></i><span class="dm-vegdot "></span><span class="dm-rating"><i class="fa-solid fa-star"></i> 4.7</span></div>
+        <div class="dish-info">
+          <div class="dish-top">
+            <div>
+              <div class="dish-name">Bajra Roti + Sabzi</div>
+              <div class="dish-cook">Ghar Ka Swaad • Bapunagar</div>
+            </div>
+            <div class="rating"><i class="fa-solid fa-star"></i> 4.7</div>
+          </div>
+          <div class="dish-bottom">
+            <div class="price">₹180 <span class="unit">/kg</span></div>
+          </div>
+          <div class="mode-toggle">
+            <div class="mode-btn active" onclick="setOrderMode(this, 'unit')">Kg mein order</div>
+            <div class="mode-btn" onclick="setOrderMode(this, 'people')">Logo ki ginti se</div>
+          </div>
+          <div class="qty-row">
+            <label>Quantity</label>
+            <select class="qty-select" onchange="updateEstimate(this)">
+              <option value="1">1 kg</option>
+              <option value="2">2 kg</option>
+              <option value="3">3 kg</option>
+              <option value="4">4 kg</option>
+              <option value="5">5 kg</option>
+              <option value="10">10 kg</option>
+              <option value="20">20 kg</option>
+              <option value="50">50 kg</option>
+            </select>
+          </div>
+          <div class="estimate-row">
+            <span class="est-people"><i class="fa-solid fa-users"></i> <span class="est-people-text">~4 logo ke liye</span></span>
+            <span class="est-total">Total: <span class="est-total-amount">₹180</span></span>
+          </div>
+          <button class="add-btn full" onclick="addToCart(this)">+ Cart mein add karo</button>
+        </div>
+      </div>
+
+      <div class="cook-group-head">
+        <div class="cgh-left"><i class="fa-solid fa-kitchen-set"></i><div><div class="cgh-name">Ahmed ke Mande</div><div class="cgh-area" style="margin-left:0;">Kalupur</div></div></div>
+        <div class="cgh-rating"><i class="fa-solid fa-star"></i> 4.6</div>
+      </div>
+      <div class="dish-card" data-price="150" data-unit="kg" data-cat="roti" data-percapita="true" data-mode="unit">
+        <div class="dish-media cat-roti"><i class="fa-solid fa-bread-slice dm-icon"></i><span class="dm-vegdot "></span><span class="dm-rating"><i class="fa-solid fa-star"></i> 4.6</span></div>
+        <div class="dish-info">
+          <div class="dish-top">
+            <div>
+              <div class="dish-name">Mande</div>
+              <div class="dish-cook">Ahmed ke Mande • Kalupur</div>
+            </div>
+            <div class="rating"><i class="fa-solid fa-star"></i> 4.6</div>
+          </div>
+          <div class="dish-bottom">
+            <div class="price">₹150 <span class="unit">/kg</span></div>
+          </div>
+          <div class="mode-toggle">
+            <div class="mode-btn active" onclick="setOrderMode(this, 'unit')">Kg mein order</div>
+            <div class="mode-btn" onclick="setOrderMode(this, 'people')">Logo ki ginti se</div>
+          </div>
+          <div class="qty-row">
+            <label>Quantity</label>
+            <select class="qty-select" onchange="updateEstimate(this)">
+              <option value="1">1 kg</option>
+              <option value="2">2 kg</option>
+              <option value="3">3 kg</option>
+              <option value="4">4 kg</option>
+              <option value="5">5 kg</option>
+              <option value="10">10 kg</option>
+              <option value="20">20 kg</option>
+              <option value="50">50 kg</option>
+            </select>
+          </div>
+          <div class="estimate-row">
+            <span class="est-people"><i class="fa-solid fa-users"></i> <span class="est-people-text">~4 logo ke liye</span></span>
+            <span class="est-total">Total: <span class="est-total-amount">₹150</span></span>
+          </div>
+          <button class="add-btn full" onclick="addToCart(this)">+ Cart mein add karo</button>
+        </div>
+      </div>
+
+      <div class="cook-group-head">
+        <div class="cgh-left"><i class="fa-solid fa-store"></i><div><div class="cgh-name">Rafiq Nashta Corner</div><div class="cgh-area" style="margin-left:0;">Gomtipur</div></div></div>
+        <div class="cgh-rating"><i class="fa-solid fa-star"></i> 4.7</div>
+      </div>
+      <div class="dish-card" data-price="8" data-unit="piece" data-cat="nashta">
+        <div class="dish-media cat-nashta"><i class="fa-solid fa-cookie-bite dm-icon"></i><span class="dm-vegdot "></span><span class="dm-rating"><i class="fa-solid fa-star"></i> 4.7</span></div>
+        <div class="dish-info">
+          <div class="dish-top">
+            <div>
+              <div class="dish-name">Samosa &amp; Bread Pakoda</div>
+              <div class="dish-cook">Rafiq Nashta Corner • Gomtipur</div>
+            </div>
+            <div class="rating"><i class="fa-solid fa-star"></i> 4.7</div>
+          </div>
+          <div class="dish-bottom">
+            <div class="price">₹8 <span class="unit">/piece</span></div>
+          </div>
+          <div class="qty-row">
+            <label>Quantity</label>
+            <select class="qty-select" onchange="updateEstimate(this)">
+              <option value="10">10 pcs</option>
+              <option value="20">20 pcs</option>
+              <option value="50">50 pcs</option>
+              <option value="100">100 pcs</option>
+              <option value="200">200 pcs</option>
+            </select>
+          </div>
+          <div class="estimate-row">
+            <span class="est-people"><i class="fa-solid fa-users"></i> <span class="est-people-text">~2 logo ke liye</span></span>
+            <span class="est-total">Total: <span class="est-total-amount">₹80</span></span>
+          </div>
+          <button class="add-btn full" onclick="addToCart(this)">+ Cart mein add karo</button>
+        </div>
+      </div>
+
+      <div class="cook-group-head">
+        <div class="cgh-left"><i class="fa-solid fa-mug-hot"></i><div><div class="cgh-name">Iqbal Chai Wale</div><div class="cgh-area" style="margin-left:0;">Shah-e-Alam</div></div></div>
+        <div class="cgh-rating"><i class="fa-solid fa-star"></i> 4.8</div>
+      </div>
+      <div class="dish-card" data-price="12" data-unit="cup" data-cat="chai">
+        <div class="dish-media cat-chai"><i class="fa-solid fa-mug-hot dm-icon"></i><span class="dm-vegdot "></span><span class="dm-rating"><i class="fa-solid fa-star"></i> 4.8</span></div>
+        <div class="dish-info">
+          <div class="dish-top">
+            <div>
+              <div class="dish-name">Kadak Chai</div>
+              <div class="dish-cook">Iqbal Chai Wale • Shah-e-Alam</div>
+            </div>
+            <div class="rating"><i class="fa-solid fa-star"></i> 4.8</div>
+          </div>
+          <div class="dish-bottom">
+            <div class="price">₹12 <span class="unit">/cup</span></div>
+          </div>
+          <div class="qty-row">
+            <label>Quantity</label>
+            <select class="qty-select" onchange="updateEstimate(this)">
+              <option value="10">10 cups</option>
+              <option value="20">20 cups</option>
+              <option value="50">50 cups</option>
+              <option value="100">100 cups</option>
+            </select>
+          </div>
+          <div class="estimate-row">
+            <span class="est-people"><i class="fa-solid fa-users"></i> <span class="est-people-text">~10 logo ke liye</span></span>
+            <span class="est-total">Total: <span class="est-total-amount">₹120</span></span>
+          </div>
+          <button class="add-btn full" onclick="addToCart(this)">+ Cart mein add karo</button>
+        </div>
+      </div>
+
+      <div class="cook-group-head">
+        <div class="cgh-left"><i class="fa-solid fa-candy-cane"></i><div><div class="cgh-name">Javed Halwai</div><div class="cgh-area" style="margin-left:0;">Jamalpur</div></div></div>
+        <div class="cgh-rating"><i class="fa-solid fa-star"></i> 4.9</div>
+      </div>
+      <div class="dish-card" data-price="450" data-unit="kg" data-cat="mithai">
+        <div class="dish-media cat-mithai"><i class="fa-solid fa-candy-cane dm-icon"></i><span class="dm-vegdot "></span><span class="dm-rating"><i class="fa-solid fa-star"></i> 4.9</span></div>
+        <div class="dish-info">
+          <div class="dish-top">
+            <div>
+              <div class="dish-name">Mohanthal</div>
+              <div class="dish-cook">Javed Halwai • Jamalpur</div>
+            </div>
+            <div class="rating"><i class="fa-solid fa-star"></i> 4.9</div>
+          </div>
+          <div class="dish-bottom">
+            <div class="price">₹450 <span class="unit">/kg</span></div>
+          </div>
+          <div class="qty-row">
+            <label>Quantity</label>
+            <select class="qty-select" onchange="updateEstimate(this)">
+              <option value="1">1 kg</option>
+              <option value="2">2 kg</option>
+              <option value="3">3 kg</option>
+              <option value="4">4 kg</option>
+              <option value="5">5 kg</option>
+              <option value="10">10 kg</option>
+              <option value="20">20 kg</option>
+              <option value="50">50 kg</option>
+            </select>
+          </div>
+          <div class="estimate-row">
+            <span class="est-people"><i class="fa-solid fa-users"></i> <span class="est-people-text">~4 logo ke liye</span></span>
+            <span class="est-total">Total: <span class="est-total-amount">₹450</span></span>
+          </div>
+          <button class="add-btn full" onclick="addToCart(this)">+ Cart mein add karo</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section style="background:var(--charcoal); border-radius:28px; margin:0 16px; padding:24px 18px; color:var(--cream);">
+    <div style="text-align:center; margin-bottom:16px;">
+      <p class="eyebrow" style="margin-bottom:6px;">Sirf yahan milega</p>
+      <h2 style="font-size:19px; color:var(--cream);">Apna Thaal Banao</h2>
+      <p style="font-size:11.5px; color:#C9B79C; margin-top:4px;">Pehle cook chuno, phir unke items chuno — quantity kitne logo ke liye hai wahi decide karegi</p>
+    </div>
+
+    <div style="display:flex; align-items:center; justify-content:space-between; background:var(--card); border-radius:14px; padding:12px 14px; margin-bottom:14px;">
+      <span style="font-size:12px; font-weight:600; color:#C9B79C;">Kitne log?</span>
+      <select id="comboGuests" onchange="updateComboTotal()" style="padding:7px 12px; border-radius:8px; border:none; font-size:12.5px; font-weight:700; background:var(--cream); color:var(--charcoal);">
+        <option value="10">10</option>
+        <option value="20">20</option>
+        <option value="30">30</option>
+        <option value="50">50</option>
+        <option value="100">100</option>
+        <option value="500">500</option>
+      </select>
+    </div>
+
+    <div id="cookAccordion" style="display:flex; flex-direction:column; gap:10px;"></div>
+
+    <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-top:16px; padding:0 2px;">
+      <div>
+        <span style="font-size:12px; color:#C9B79C; display:block;">Estimate</span>
+        <span style="font-size:10.5px; color:#8A7256;" id="comboPerPerson">₹0 /person</span>
+      </div>
+      <span style="font-size:19px; font-weight:700; color:var(--turmeric);" id="comboTotalDisplay">₹0</span>
+    </div>
+    <button class="add-btn full" style="background:var(--turmeric); color:var(--charcoal); margin-top:10px;" onclick="addComboToCart()">
+      <i class="fa-solid fa-bag-shopping"></i> Thaal cart mein add karo
+    </button>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <div class="section-head">
+        <div>
+          <h2>Kaise kaam karta hai</h2>
+        </div>
+      </div>
+      <div class="steps">
+        <div class="step">
+          <div class="step-num">1</div>
+          <div>
+            <div class="step-title">Locality aur dish chuno</div>
+            <div class="step-desc">Apne area ke home cooks ka aaj ka menu dekho</div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">2</div>
+          <div>
+            <div class="step-title">Order karo</div>
+            <div class="step-desc">App se ya WhatsApp pe direct order confirm karo</div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">3</div>
+          <div>
+            <div class="step-title">Garam garam delivery</div>
+            <div class="step-desc">Hamara rider fresh khana seedha darwaze tak pahunchaye</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <div class="cook-banner">
+        <div>
+          <i class="fa-solid fa-kitchen-set"></i>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section style="padding-top:0;">
+    <div class="wrap">
+      <div class="cook-banner" style="flex-direction:column; align-items:flex-start;">
+        <i class="fa-solid fa-kitchen-set"></i>
+        <h3>Aap bhi ghar se cook karte ho?</h3>
+        <p>GharKaKhana ke saath judo aur apna khana Ahmedabad ke customers tak pahunchao.</p>
+        <button class="btn btn-primary" style="flex:none; padding:11px 20px;"><i class="fa-solid fa-chef-hat"></i>Cook banke judo</button>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="wrap">
+      <div class="brand" style="font-family:'Fraunces',serif; font-weight:700; font-size:17px; display:flex; align-items:center; gap:6px;">
+        <i class="fa-solid fa-bowl-food" style="color:var(--turmeric);"></i> GharKaKhana
+      </div>
+      <p>Ghar ke cooks se, seedha aapki thali tak. Shah-e-Alam, Gomtipur, Bapunagar, Juhapura, Jamalpur, Kalupur.</p>
+      <div class="foot-links">
+        <a href="#">Humare baare mein</a>
+        <a href="#">Privacy Policy</a>
+        <a href="#">Contact</a>
+      </div>
+      <div class="foot-social">
+        <i class="fa-brands fa-whatsapp"></i>
+        <i class="fa-brands fa-instagram"></i>
+        <i class="fa-solid fa-phone"></i>
+      </div>
+    </div>
+  </footer>
+
+  <div class="sticky-cta">
+    <button class="inner" id="cartBar" onclick="openCart()"><i class="fa-solid fa-bag-shopping"></i> Cart khaali hai</button>
+  </div>
+
+  <div class="overlay" id="cartOverlay">
+    <div class="modal" id="cartModal"></div>
+  </div>
+
+  <script>
+    // Rough serving guide per unit — adjust as needed
+    const GRAMS_PER_PERSON = 250;   // for kg-based items
+    const PIECES_PER_PERSON = 4;    // for piece-based nashta items
+    const CUPS_PER_PERSON = 1;      // for cup-based chai
+    const PEOPLE_OPTIONS = [5, 10, 15, 20, 30, 50, 100];
+
+    function estimatePeople(unit, qty){
+      if(unit === "piece") return Math.max(1, Math.round(qty / PIECES_PER_PERSON));
+      if(unit === "cup") return Math.max(1, Math.round(qty / CUPS_PER_PERSON));
+      return Math.max(1, Math.round((qty * 1000) / GRAMS_PER_PERSON));
+    }
+
+    function baseQtyFromPeople(unit, guests){
+      if(unit === "piece") return guests * PIECES_PER_PERSON;
+      return (guests * GRAMS_PER_PERSON) / 1000; // kg
+    }
+
+    function unitLabel(unit){
+      return unit === "piece" ? "pcs" : unit === "cup" ? "cups" : "kg";
+    }
+
+    function qtyOptionsHTML(unit, mode){
+      if(mode === "people"){
+        return PEOPLE_OPTIONS.map(p => `<option value="${p}">${p} log</option>`).join("");
+      }
+      const opts = unit === "piece" ? [10, 20, 50, 100, 200] : unit === "cup" ? [10, 20, 50, 100] : [1, 2, 3, 4, 5, 10, 20, 50];
+      return opts.map(o => `<option value="${o}">${o} ${unitLabel(unit)}</option>`).join("");
+    }
+
+    function setOrderMode(btnEl, mode){
+      const card = btnEl.closest(".dish-card");
+      card.dataset.mode = mode;
+      card.querySelectorAll(".mode-btn").forEach(b => b.classList.remove("active"));
+      btnEl.classList.add("active");
+      const select = card.querySelector(".qty-select");
+      select.innerHTML = qtyOptionsHTML(card.dataset.unit, mode);
+      updateEstimate(select);
+    }
+
+    function updateEstimate(selectEl){
+      const card = selectEl.closest(".dish-card");
+      const price = parseFloat(card.dataset.price);
+      const unit = card.dataset.unit;
+      const mode = card.dataset.mode || "unit";
+      const val = parseFloat(selectEl.value);
+
+      let total, peopleText;
+      if(mode === "people"){
+        const baseQty = baseQtyFromPeople(unit, val);
+        total = Math.round(price * baseQty);
+        peopleText = `${val} logo ke liye (~${baseQty % 1 === 0 ? baseQty : baseQty.toFixed(1)} ${unitLabel(unit)})`;
+      } else {
+        total = Math.round(price * val);
+        peopleText = `~${estimatePeople(unit, val)} logo ke liye`;
+      }
+
+      card.querySelector(".est-total-amount").textContent = `₹${total}`;
+      card.querySelector(".est-people-text").textContent = peopleText;
+    }
+
+    // ---------- Cart & Checkout ----------
+    // In-memory only for now — connect Firebase later so orders sync to the cook & admin panels
+    let cart = [];
+    let fulfilment = null; // "pickup" | "delivery"
+    let mealType = null; // "lunch" | "dinner" | "urgent"
+    function todayISO(){
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+    }
+    let orderDate = todayISO();
+    let customerName = "";
+    let customerPhone = "";
+    let deliveryAddress = "";
+    const UPI_ID = "gharkakhana@upi"; // replace with real UPI ID before going live
+
+    function addToCart(btn){
+      const card = btn.closest(".dish-card");
+      const name = card.querySelector(".dish-name").textContent;
+      const cook = card.querySelector(".dish-cook").textContent.split("•")[0].trim();
+      const price = parseFloat(card.dataset.price);
+      const unit = card.dataset.unit;
+      const mode = card.dataset.mode || "unit";
+      const val = parseFloat(card.querySelector(".qty-select").value);
+
+      let meta, total;
+      if(mode === "people"){
+        const baseQty = baseQtyFromPeople(unit, val);
+        total = Math.round(price * baseQty);
+        meta = `${val} log (~${baseQty % 1 === 0 ? baseQty : baseQty.toFixed(1)} ${unitLabel(unit)}) × ₹${price}/${unit}`;
+      } else {
+        total = Math.round(price * val);
+        meta = `${val} ${unitLabel(unit)} × ₹${price}/${unit}`;
+      }
+
+      cart.push({ name, cook, meta, total });
+      updateCartBar();
+      showToast(`${name} cart mein add ho gaya`);
+    }
+
+
+
+    function cartTotal(){
+      return cart.reduce((s, i) => s + i.total, 0);
+    }
+
+    function updateCartBar(){
+      const bar = document.getElementById("cartBar");
+      if(cart.length === 0){
+        bar.innerHTML = `<i class="fa-solid fa-bag-shopping"></i> Cart khaali hai`;
+      } else {
+        bar.innerHTML = `<i class="fa-solid fa-bag-shopping"></i> ${cart.length} item • ₹${cartTotal()} — Cart dekho`;
+      }
+    }
+
+    function openCart(){
+      renderCartStep();
+      document.getElementById("cartOverlay").classList.add("open");
+    }
+    function closeCart(){
+      document.getElementById("cartOverlay").classList.remove("open");
+    }
+
+    function renderCartStep(){
+      const modal = document.getElementById("cartModal");
+      if(cart.length === 0){
+        modal.innerHTML = `
+          <h3>Aapka Cart</h3>
+          <div class="cart-empty"><i class="fa-solid fa-bag-shopping" style="font-size:22px; display:block; margin-bottom:8px;"></i>Cart khaali hai — pehle kuch dishes add karo.</div>
+          <div class="modal-actions"><button class="btn btn-primary" style="flex:1;" onclick="closeCart()">Theek hai</button></div>
+        `;
+        return;
+      }
+      modal.innerHTML = `
+        <h3>Aapka Cart</h3>
+        ${cart.map((item, i) => `
+          <div class="cart-item">
+            <div>
+              <div class="ci-name">${item.name}</div>
+              <div class="ci-meta">${item.cook} • ${item.meta}</div>
+            </div>
+            <div style="display:flex; align-items:center;">
+              <div class="ci-price">₹${item.total}</div>
+              <i class="fa-solid fa-trash cart-remove" onclick="removeCartItem(${i})"></i>
+            </div>
+          </div>
+        `).join("")}
+        <div class="cart-total"><span>Total</span><span>₹${cartTotal()}</span></div>
+        <div class="modal-actions">
+          <button class="btn btn-ghost" style="flex:1;" onclick="closeCart()">Aur add karo</button>
+          <button class="btn btn-primary" style="flex:1;" onclick="renderFulfilStep()">Aage badho</button>
+        </div>
+      `;
+    }
+
+    function removeCartItem(i){
+      cart.splice(i, 1);
+      updateCartBar();
+      if(cart.length === 0) renderCartStep(); else renderCartStep();
+    }
+
+    function renderFulfilStep(){
+      const modal = document.getElementById("cartModal");
+      modal.innerHTML = `
+        <h3>Aapki details</h3>
+        <div class="field">
+          <label>Aapka naam</label>
+          <input type="text" id="f_custname" value="${customerName}" placeholder="e.g. Imran Shaikh">
+        </div>
+        <div class="field">
+          <label>Phone (WhatsApp)</label>
+          <input type="tel" id="f_custphone" value="${customerPhone}" placeholder="e.g. 98765 43210">
+        </div>
+        <div class="fulfil-toggle">
+          <div class="fulfil-option" id="opt-pickup" onclick="selectFulfil('pickup')">
+            <i class="fa-solid fa-store"></i>Cook se Pickup
+          </div>
+          <div class="fulfil-option" id="opt-delivery" onclick="selectFulfil('delivery')">
+            <i class="fa-solid fa-motorcycle"></i>Home Delivery
+          </div>
+        </div>
+        <div id="addressField"></div>
+        <div class="modal-actions">
+          <button class="btn btn-ghost" style="flex:1;" onclick="renderCartStep()">Wapas</button>
+          <button class="btn btn-primary" style="flex:1;" onclick="proceedToMealTime()">Aage badho</button>
+        </div>
+      `;
+      if(fulfilment) selectFulfil(fulfilment);
+    }
+
+    function selectFulfil(type){
+      fulfilment = type;
+      document.getElementById("opt-pickup").classList.toggle("selected", type === "pickup");
+      document.getElementById("opt-delivery").classList.toggle("selected", type === "delivery");
+      const addressField = document.getElementById("addressField");
+      addressField.innerHTML = type === "delivery" ? `
+        <div class="field">
+          <label>Delivery address</label>
+          <textarea id="f_address" rows="2" placeholder="Ghar/gali ka pura pata">${deliveryAddress}</textarea>
+        </div>
+      ` : `
+        <div class="field" style="font-size:12px; color:var(--text-soft);">
+          <i class="fa-solid fa-circle-info"></i> Cook ke address se pickup time confirm WhatsApp pe milega.
+        </div>
+      `;
+    }
+
+    function proceedToMealTime(){
+      const name = document.getElementById("f_custname").value.trim();
+      const phone = document.getElementById("f_custphone").value.trim();
+      if(!name || !phone){
+        showToast("Naam aur phone number bharo");
+        return;
+      }
+      if(!fulfilment){
+        showToast("Pehle Pickup ya Delivery chuno");
+        return;
+      }
+      if(fulfilment === "delivery"){
+        const addr = document.getElementById("f_address").value.trim();
+        if(!addr){
+          showToast("Delivery address bharo");
+          return;
+        }
+        deliveryAddress = addr;
+      }
+      customerName = name;
+      customerPhone = phone;
+      renderMealTimeStep();
+    }
+
+    // Order cutoffs (same-day only): Lunch by 10:00 AM, Dinner by 6:00 PM. Future dates skip cutoff — advance/event orders.
+    function renderMealTimeStep(){
+      const modal = document.getElementById("cartModal");
+      modal.innerHTML = `
+        <h3>Kab chahiye?</h3>
+        <div class="field">
+          <label>Date (aaj ya aage ki koi bhi date — party/event ke liye)</label>
+          <input type="date" id="f_orderdate" value="${orderDate}" min="${todayISO()}" onchange="setOrderDate(this.value)">
+        </div>
+        <div class="fulfil-toggle">
+          <div class="fulfil-option" id="opt-lunch" onclick="selectMealType('lunch')"><i class="fa-solid fa-sun"></i>Lunch</div>
+          <div class="fulfil-option" id="opt-dinner" onclick="selectMealType('dinner')"><i class="fa-solid fa-moon"></i>Dinner</div>
+          <div class="fulfil-option" id="opt-urgent" onclick="selectMealType('urgent')"><i class="fa-solid fa-bolt"></i>Urgent</div>
+        </div>
+        <div id="mealTimeNote" style="font-size:11.5px; color:var(--text-soft); margin-top:10px; line-height:1.5;"></div>
+        <div class="modal-actions">
+          <button class="btn btn-ghost" style="flex:1;" onclick="renderFulfilStep()">Wapas</button>
+          <button class="btn btn-primary" style="flex:1;" onclick="goToPayment()">Aage badho</button>
+        </div>
+      `;
+      if(mealType) selectMealType(mealType);
+    }
+
+    function setOrderDate(val){
+      orderDate = val;
+      if(mealType) selectMealType(mealType);
+    }
+
+    function selectMealType(type){
+      mealType = type;
+      ["lunch", "dinner", "urgent"].forEach(t => document.getElementById(`opt-${t}`).classList.toggle("selected", t === type));
+      const note = document.getElementById("mealTimeNote");
+      const now = new Date();
+      const hourFloat = now.getHours() + now.getMinutes() / 60;
+      const isToday = orderDate === todayISO();
+      const dateLabel = isToday ? "aaj" : new Date(orderDate + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+
+      if(type === "lunch"){
+        if(!isToday){
+          note.innerHTML = `<i class="fa-solid fa-circle-check" style="color:var(--sage);"></i> ${dateLabel} ke Lunch ke liye advance order — cutoff abhi apply nahi hota, cook ke paas time hai taiyari ka.`;
+        } else {
+          note.innerHTML = hourFloat < 10
+            ? `<i class="fa-solid fa-circle-check" style="color:var(--sage);"></i> Lunch order subah <b>10:00 baje tak</b> liye jaate hain — aapka order time mein hai.`
+            : `<i class="fa-solid fa-triangle-exclamation" style="color:var(--chili);"></i> Aaj ke lunch ka cutoff (10:00 AM) nikal gaya hai. Date badal ke kal ka lunch book karo, ya "Urgent" try karo.`;
+        }
+      } else if(type === "dinner"){
+        if(!isToday){
+          note.innerHTML = `<i class="fa-solid fa-circle-check" style="color:var(--sage);"></i> ${dateLabel} ke Dinner ke liye advance order — cutoff abhi apply nahi hota, cook ke paas time hai taiyari ka.`;
+        } else {
+          note.innerHTML = hourFloat < 18
+            ? `<i class="fa-solid fa-circle-check" style="color:var(--sage);"></i> Dinner order shaam <b>6:00 baje tak</b> liye jaate hain — aapka order time mein hai.`
+            : `<i class="fa-solid fa-triangle-exclamation" style="color:var(--chili);"></i> Aaj ke dinner ka cutoff (6:00 PM) nikal gaya hai. Date badal ke kal ka dinner book karo, ya "Urgent" try karo.`;
+        }
+      } else {
+        note.innerHTML = isToday
+          ? `<i class="fa-solid fa-circle-info" style="color:var(--turmeric);"></i> Urgent order cook ki availability pe depend karta hai, thoda extra charge lag sakta hai. Cook approve karega tabhi confirm hoga.`
+          : `<i class="fa-solid fa-circle-info" style="color:var(--turmeric);"></i> Future date ke liye "Urgent" zaroori nahi — Lunch ya Dinner select karo, cutoff apply nahi hoga.`;
+      }
+    }
+
+    function goToPayment(){
+      if(!mealType){
+        showToast("Lunch, Dinner ya Urgent chuno");
+        return;
+      }
+      renderPaymentStep();
+    }
+
+    function renderPaymentStep(){
+      const modal = document.getElementById("cartModal");
+      const total = cartTotal();
+      modal.innerHTML = `
+        <h3>Payment karo</h3>
+        <div class="qr-box">
+          <img src="qr-code.jpg" alt="GharKaKhana UPI QR Code" style="width:180px; height:180px; border-radius:12px; object-fit:cover; background:var(--tan);"
+               onerror="this.onerror=null; this.outerHTML='<div style=&quot;width:180px;height:180px;border-radius:12px;background:var(--tan);display:flex;align-items:center;justify-content:center;text-align:center;font-size:11px;color:var(--text-soft);padding:10px;&quot;><i class=&quot;fa-solid fa-qrcode&quot; style=&quot;font-size:26px;display:block;margin-bottom:6px;&quot;></i>Apna QR code photo yahan (qr-code.jpg) daalo</div>';">
+          <div class="qr-amount">₹${total}</div>
+          <div class="qr-note">Kisi bhi UPI app (GPay, PhonePe, Paytm) se ye QR scan karo aur ₹${total} bhejo</div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-ghost" style="flex:1;" onclick="renderMealTimeStep()">Wapas</button>
+          <button class="btn btn-primary" style="flex:1;" onclick="confirmPaymentDone()">Maine payment kar diya</button>
+        </div>
+      `;
+    }
+
+    function confirmPaymentDone(){
+      const modal = document.getElementById("cartModal");
+      const orderId = "GK" + Math.floor(1000 + Math.random() * 9000);
+      const mealLabel = mealType === "lunch" ? "Lunch" : mealType === "dinner" ? "Dinner" : "Urgent";
+      const isToday = orderDate === todayISO();
+      const dateLabel = isToday ? "Aaj" : new Date(orderDate + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+
+      // Distinct cooks involved in this order (single cook if it's a normal order,
+      // "N alag cooks" if it includes an Apna Thaal combo)
+      const cookNames = new Set(cart.map(i => i.cook));
+      const cookLabel = cookNames.size === 1 ? Array.from(cookNames)[0] : `${cookNames.size} alag cooks`;
+
+      const orderDoc = {
+        item: cart.map(i => i.name).join(", "),
+        customer: customerName,
+        customerPhone: customerPhone,
+        cook: cookLabel,
+        area: fulfilment === "delivery" ? deliveryAddress : "Pickup",
+        type: fulfilment === "pickup" ? "Pickup" : "Delivery",
+        meal: mealType === "lunch" ? "Lunch" : mealType === "dinner" ? "Dinner" : "Urgent",
+        date: orderDate,
+        total: cartTotal(),
+        status: "Pending",
+      };
+
+      if(window.FIREBASE_CONFIGURED){
+        db.collection("orders").doc(orderId).set(orderDoc).catch(err => {
+          console.error("Order save failed:", err);
+        });
+      } else {
+        console.warn("Firebase not configured — order not saved:", orderDoc);
+      }
+
+      modal.innerHTML = `
+        <div class="order-success">
+          <i class="fa-solid fa-clock" style="color:var(--turmeric);"></i>
+          <h3>Order cook ko bhej diya gaya!</h3>
+          <p style="font-size:12.5px; color:var(--text-soft); margin-top:6px;">
+            Order #${orderId} — ${dateLabel} ke ${mealLabel} ke liye (${fulfilment === "pickup" ? "Pickup" : "Delivery"}) abhi <b>cook ke approval ka wait</b> kar raha hai.
+            Cook confirm karega tabhi order pakka hoga — confirmation WhatsApp pe aayega.
+          </p>
+          <button class="btn btn-primary" style="margin-top:18px; width:100%;" onclick="finishOrder()">Theek hai</button>
+        </div>
+      `;
+    }
+
+    function finishOrder(){
+      cart = [];
+      fulfilment = null;
+      mealType = null;
+      orderDate = todayISO();
+      updateCartBar();
+      closeCart();
+    }
+
+    // ---------- Category filter ----------
+    function filterCategory(cat){
+      document.querySelectorAll("#categoryChips .cat-icon").forEach(c => c.classList.toggle("active", c.dataset.cat === cat));
+      document.querySelectorAll(".dish-card").forEach(card => {
+        const show = cat === "all" || card.dataset.cat === cat;
+        card.style.display = show ? "flex" : "none";
+        const header = card.previousElementSibling;
+        if(header && header.classList.contains("cook-group-head")){
+          header.style.display = show ? "flex" : "none";
+        }
+      });
+    }
+
+    // ---------- Apna Thaal Banao (multi-cook combo, cook-first, per-person) ----------
+    // perPersonQty is based on real catering norms — not a flat ratio for every dish type:
+    // sweets ~75g/person, dry starters ~100-125g/person, curry mains ~150g/person,
+    // biryani (buffet, with other items) ~300g/person, rice side ~150g/person, roti 2 pcs/person
+    const cookMenus = [
+      { cook: "Javed Halwai", items: [
+        { name: "Mohanthal", unit: "kg", price: 450, perPersonQty: 0.075 },
+        { name: "Rasgulla", unit: "kg", price: 380, perPersonQty: 0.075 },
+      ]},
+      { cook: "KGN", items: [
+        { name: "Dry Chicken Chilly", unit: "kg", price: 900, perPersonQty: 0.1 },
+        { name: "Seekh Kebab", unit: "kg", price: 800, perPersonQty: 0.125 },
+        { name: "Mutton Chaap", unit: "kg", price: 950, perPersonQty: 0.15 },
+      ]},
+      { cook: "Noora", items: [
+        { name: "Biryani", unit: "kg", price: 700, perPersonQty: 0.3 },
+      ]},
+      { cook: "Bhure", items: [
+        { name: "Khaliya", unit: "kg", price: 850, perPersonQty: 0.15 },
+      ]},
+      { cook: "Sakina Aapa", items: [
+        { name: "Roti", unit: "piece", price: 8, perPersonQty: 2 },
+      ]},
+      { cook: "Ahmed", items: [
+        { name: "Mande", unit: "kg", price: 150, perPersonQty: 0.15 },
+        { name: "Chawal", unit: "kg", price: 150, perPersonQty: 0.15 },
+      ]},
+    ];
+
+    let selectedComboKeys = new Set();
+
+    function renderCookAccordion(){
+      const container = document.getElementById("cookAccordion");
+      container.innerHTML = cookMenus.map((cookObj, ci) => `
+        <details class="cook-acc" ${ci === 0 ? "open" : ""}>
+          <summary><i class="fa-solid fa-chef-hat"></i> ${cookObj.cook}</summary>
+          <div class="cook-acc-body">
+            ${cookObj.items.map((item, ii) => {
+              const key = `${ci}-${ii}`;
+              return `
+              <div class="combo-row" id="combo-${key}" onclick="toggleComboItem('${key}')">
+                <div class="ci-check"><i class="fa-solid fa-check"></i></div>
+                <div class="ci-body">
+                  <div class="ci-title">${item.name}</div>
+                  <div class="ci-sub">₹${item.price}/${item.unit}</div>
+                  <div class="ci-ratio"><i class="fa-solid fa-scale-balanced"></i> ${item.unit === "piece" ? item.perPersonQty + " pcs" : Math.round(item.perPersonQty*1000) + "g"}/person</div>
+                  <div class="ci-sub" id="qtytext-${key}" style="margin-top:4px;">Select karke total mein dekho</div>
+                </div>
+              </div>`;
+            }).join("")}
+          </div>
+        </details>
+      `).join("");
+    }
+
+    function itemFromKey(key){
+      const [ci, ii] = key.split("-").map(Number);
+      return { cookObj: cookMenus[ci], item: cookMenus[ci].items[ii] };
+    }
+
+    function toggleComboItem(key){
+      const row = document.getElementById(`combo-${key}`);
+      if(selectedComboKeys.has(key)){
+        selectedComboKeys.delete(key);
+        row.classList.remove("selected");
+      } else {
+        selectedComboKeys.add(key);
+        row.classList.add("selected");
+      }
+      updateComboTotal();
+    }
+
+    function updateComboTotal(){
+      const guests = parseInt(document.getElementById("comboGuests").value);
+      let total = 0;
+      selectedComboKeys.forEach(key => {
+        const { item } = itemFromKey(key);
+        const baseQty = item.perPersonQty * guests;
+        total += item.price * baseQty;
+        const qtyText = document.getElementById(`qtytext-${key}`);
+        if(qtyText) qtyText.textContent = `${guests} logo ke liye ~${baseQty % 1 === 0 ? baseQty : baseQty.toFixed(1)} ${unitLabel(item.unit)}`;
+      });
+      // reset text for unselected items
+      cookMenus.forEach((cookObj, ci) => cookObj.items.forEach((item, ii) => {
+        const key = `${ci}-${ii}`;
+        if(!selectedComboKeys.has(key)){
+          const qtyText = document.getElementById(`qtytext-${key}`);
+          if(qtyText) qtyText.textContent = "Select karke total mein dekho";
+        }
+      }));
+      document.getElementById("comboTotalDisplay").textContent = `₹${Math.round(total)}`;
+      document.getElementById("comboPerPerson").textContent = `₹${guests > 0 ? Math.round(total/guests) : 0} /person`;
+    }
+
+    function addComboToCart(){
+      if(selectedComboKeys.size === 0){
+        showToast("Pehle kam se kam ek item chuno");
+        return;
+      }
+      const guests = parseInt(document.getElementById("comboGuests").value);
+      let total = 0;
+      const lines = Array.from(selectedComboKeys).map(key => {
+        const { cookObj, item } = itemFromKey(key);
+        const baseQty = item.perPersonQty * guests;
+        const lineTotal = item.price * baseQty;
+        total += lineTotal;
+        return `${item.name} (${cookObj.cook}) — ~${baseQty % 1 === 0 ? baseQty : baseQty.toFixed(1)} ${unitLabel(item.unit)}`;
+      });
+      cart.push({
+        name: `Apna Thaal — ${guests} log (${selectedComboKeys.size} items)`,
+        cook: `${new Set(Array.from(selectedComboKeys).map(k => itemFromKey(k).cookObj.cook)).size} alag cooks`,
+        meta: lines.join(" • "),
+        total: Math.round(total),
+      });
+      updateCartBar();
+      showToast(`Apna Thaal cart mein add ho gaya — ₹${Math.round(total)}`);
+    }
+
+    renderCookAccordion();
+    updateComboTotal();
+
+    function showToast(msg){
+      let toast = document.getElementById("siteToast");
+      if(!toast){
+        toast = document.createElement("div");
+        toast.id = "siteToast";
+        toast.style.cssText = "position:fixed; bottom:80px; left:50%; transform:translateX(-50%); background:#2B1B17; color:#FBF3E7; padding:10px 18px; border-radius:999px; font-size:12px; font-weight:600; z-index:200; opacity:0; transition:opacity .25s; pointer-events:none;";
+        document.body.appendChild(toast);
+      }
+      toast.textContent = msg;
+      toast.style.opacity = "1";
+      setTimeout(()=> toast.style.opacity = "0", 1800);
+    }
+
+    // Register service worker (needs HTTPS hosting — won't run from a local file)
+    if("serviceWorker" in navigator){
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("sw.js").catch(() => {});
+      });
+    }
+  </script>
+</body>
+</html>
