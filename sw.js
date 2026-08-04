@@ -1,7 +1,6 @@
-// GharKaKhana service worker — caches the app shell so it opens fast
-// and works even with a patchy connection. Bump CACHE_NAME whenever
-// you update the site so users get the fresh version.
-const CACHE_NAME = "gharkakhana-v1";
+// GharKaKhana service worker — network-first, so you always get the latest
+// version when online, and it falls back to cache only if offline.
+const CACHE_NAME = "gharkakhana-v2";
 const APP_SHELL = [
   "./gharkakhana-website.html",
   "./manifest.json",
@@ -25,11 +24,14 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      return (
-        cached ||
-        fetch(event.request).catch(() => caches.match("./gharkakhana-website.html"))
-      );
-    })
+    fetch(event.request)
+      .then((response) => {
+        const clone = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+        return response;
+      })
+      .catch(() =>
+        caches.match(event.request).then((cached) => cached || caches.match("./gharkakhana-website.html"))
+      )
   );
 });
