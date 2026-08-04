@@ -203,6 +203,13 @@
         <select id="m_cook"></select>
       </div>
       <div class="field">
+        <label>Type</label>
+        <select id="m_type">
+          <option value="veg">Veg</option>
+          <option value="nonveg">Non-Veg</option>
+        </select>
+      </div>
+      <div class="field">
         <label>Category</label>
         <select id="m_category">
           <option value="thali">Thali</option>
@@ -218,6 +225,7 @@
           <option value="kg">Per kg</option>
           <option value="piece">Per piece</option>
           <option value="cup">Per cup</option>
+          <option value="box">Per box (4 person)</option>
         </select>
       </div>
       <div class="field">
@@ -274,13 +282,13 @@
       { name: "Yusuf Malek", area: "Bapunagar", phone: "90000 33344", status: "inactive" },
     ],
     menu: [
-      { name: "Gujarati Thali", cook: "Naseem Ben ki Rasoi", category: "thali", unit: "kg", price: 260, status: "active" },
-      { name: "Chicken Handi", cook: "Ammi's Kitchen", category: "thali", unit: "kg", price: 380, status: "active" },
-      { name: "Bajra Roti + Sabzi", cook: "Ghar Ka Swaad", category: "roti", unit: "kg", price: 180, status: "active" },
-      { name: "Mande", cook: "Ahmed ke Mande", category: "roti", unit: "kg", price: 150, status: "active" },
-      { name: "Samosa & Bread Pakoda", cook: "Rafiq Nashta Corner", category: "nashta", unit: "piece", price: 8, status: "active" },
-      { name: "Kadak Chai", cook: "Iqbal Chai Wale", category: "chai", unit: "cup", price: 12, status: "active" },
-      { name: "Mohanthal", cook: "Javed Halwai", category: "mithai", unit: "kg", price: 450, status: "active" },
+      { name: "Gujarati Thali", cook: "Naseem Ben ki Rasoi", type: "veg", category: "thali", unit: "kg", price: 260, status: "active" },
+      { name: "Chicken Handi", cook: "Ammi's Kitchen", type: "nonveg", category: "thali", unit: "kg", price: 380, status: "active" },
+      { name: "Bajra Roti + Sabzi", cook: "Ghar Ka Swaad", type: "veg", category: "roti", unit: "kg", price: 180, status: "active" },
+      { name: "Mande", cook: "Ahmed ke Mande", type: "veg", category: "roti", unit: "kg", price: 150, status: "active" },
+      { name: "Samosa & Bread Pakoda", cook: "Rafiq Nashta Corner", type: "veg", category: "nashta", unit: "piece", price: 8, status: "active" },
+      { name: "Kadak Chai", cook: "Iqbal Chai Wale", type: "veg", category: "chai", unit: "cup", price: 12, status: "active" },
+      { name: "Mohanthal", cook: "Javed Halwai", type: "veg", category: "mithai", unit: "kg", price: 450, status: "active" },
     ],
   };
 
@@ -579,6 +587,7 @@
     cookSelect.innerHTML = data.cooks.map(c => `<option value="${c.name}">${c.name}</option>`).join("");
 
     document.getElementById("m_name").value = "";
+    document.getElementById("m_type").value = "veg";
     document.getElementById("m_category").value = "thali";
     document.getElementById("m_unit").value = "kg";
     document.getElementById("m_price").value = "";
@@ -590,6 +599,7 @@
       document.getElementById("modalTitle").textContent = `${item.name} ko Edit Karo`;
       document.getElementById("m_name").value = item.name;
       cookSelect.value = item.cook;
+      document.getElementById("m_type").value = item.type || "veg";
       document.getElementById("m_category").value = item.category;
       document.getElementById("m_unit").value = item.unit;
       document.getElementById("m_price").value = item.price;
@@ -646,6 +656,7 @@
   function saveMenuItem(){
     const name = document.getElementById("m_name").value.trim();
     const cook = document.getElementById("m_cook").value;
+    const type = document.getElementById("m_type").value;
     const category = document.getElementById("m_category").value;
     const unit = document.getElementById("m_unit").value;
     const price = parseFloat(document.getElementById("m_price").value);
@@ -659,7 +670,7 @@
     }
     errorBox.style.display = "none";
 
-    const payload = { name, cook, category, unit, price, status };
+    const payload = { name, cook, type, category, unit, price, status };
 
     if(!window.FIREBASE_CONFIGURED){
       if(editingId){
