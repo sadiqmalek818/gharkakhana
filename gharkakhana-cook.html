@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#2B1B17">
+<title>GharKaKhana — Cook Panel</title>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<!-- Firebase (Firestore) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script src="firebase-config.js"></script>
+<style>
+  :root{
+    --charcoal:#2B1B17; --card:#3D2A22; --turmeric:#E8A93D; --chili:#B54834;
+    --cream:#FBF3E7; --tan:#EFE1CC; --sage:#7A8B69; --text-muted:#5A4632; --text-soft:#8A7256;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{font-family:'Inter',sans-serif; background:var(--cream); color:var(--charcoal);}
+  h1,h2,h3{font-family:'Fraunces',serif; font-weight:700;}
+  .wrap{max-width:480px; margin:0 auto; padding:0 18px 100px;}
+
+  .topbar{background:var(--charcoal); color:var(--cream); padding:16px 0; position:sticky; top:0; z-index:20;}
+  .topbar .wrap{display:flex; align-items:center; justify-content:space-between; padding-bottom:0;}
+  .brand{font-family:'Fraunces',serif; font-weight:700; font-size:17px; display:flex; align-items:center; gap:6px;}
+  .brand i{color:var(--turmeric);}
+  .subtitle{font-size:10.5px; color:#C9B79C; text-transform:uppercase; letter-spacing:0.14em;}
+
+  .tabs{display:flex; gap:8px; margin:16px 0 14px; padding:0 18px; max-width:480px; margin-left:auto; margin-right:auto;}
+  .tab{
+    flex:1; text-align:center; padding:10px; border-radius:12px; font-size:12.5px; font-weight:700;
+    background:white; border:1px solid var(--tan); color:var(--text-muted); cursor:pointer;
+  }
+  .tab.active{background:var(--charcoal); color:var(--cream); border-color:var(--charcoal);}
+
+  .stat-row{display:flex; gap:10px; margin-bottom:16px;}
+  .stat{flex:1; background:var(--card); color:var(--cream); border-radius:14px; padding:12px; text-align:center;}
+  .stat b{display:block; font-size:17px;}
+  .stat span{font-size:10px; color:#C9B79C;}
+
+  .add-bar{display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;}
+  .add-bar h2{font-size:16px;}
+  .btn{border:none; cursor:pointer; font-weight:700; border-radius:12px; font-size:12.5px; padding:10px 16px; transition:transform .15s;}
+  .btn:active{transform:scale(0.96);}
+  .btn-primary{background:var(--chili); color:var(--cream);}
+  .btn-ghost{background:var(--tan); color:var(--text-muted);}
+  .btn-sage{background:var(--sage); color:var(--cream);}
+  .btn i{margin-right:6px;}
+
+  .card{background:white; border:1px solid var(--tan); border-radius:18px; padding:14px; margin-bottom:12px;}
+  .card-top{display:flex; justify-content:space-between; align-items:flex-start; gap:10px;}
+  .thumb{
+    width:40px; height:40px; border-radius:12px; display:flex; align-items:center; justify-content:center;
+    font-size:15px; flex:0 0 auto;
+  }
+  .thumb.veg{background:#E7EDE1; color:var(--sage);}
+  .thumb.nonveg{background:#F6E2DC; color:var(--chili);}
+  .info{flex:1; min-width:0;}
+  .name{font-size:13.5px; font-weight:700;}
+  .meta{font-size:11px; color:var(--text-soft); margin-top:1px;}
+  .badge{font-size:10px; font-weight:700; padding:4px 9px; border-radius:999px; white-space:nowrap;}
+  .badge.active{background:#E7EDE1; color:var(--sage);}
+  .badge.inactive{background:var(--tan); color:var(--text-soft);}
+  .row-actions{display:flex; gap:8px; margin-top:12px;}
+  .icon-btn{
+    flex:1; display:flex; align-items:center; justify-content:center; gap:5px;
+    padding:8px; border-radius:10px; font-size:11.5px; font-weight:700; cursor:pointer; border:1px solid var(--tan);
+    background:var(--cream); color:var(--text-muted);
+  }
+  .icon-btn.danger{color:var(--chili); border-color:#F0D9CF;}
+  .empty{text-align:center; padding:30px 10px; color:var(--text-soft); font-size:12.5px;}
+
+  /* order card specific */
+  .order-item{font-size:12.5px; font-weight:600; margin-bottom:2px;}
+  .order-cust{font-size:10.8px; color:var(--text-soft);}
+
+  /* Modal */
+  .overlay{position:fixed; inset:0; background:rgba(43,27,23,0.55); display:none; align-items:flex-end; justify-content:center; z-index:100;}
+  .overlay.open{display:flex;}
+  .modal{background:var(--cream); width:100%; max-width:480px; border-radius:24px 24px 0 0; padding:20px 18px 26px; animation:slideup .2s ease;}
+  @keyframes slideup{from{transform:translateY(30px); opacity:0;} to{transform:translateY(0); opacity:1;}}
+  .modal h3{font-size:16px; margin-bottom:14px;}
+  .field{margin-bottom:12px;}
+  .field label{font-size:11px; font-weight:600; color:var(--text-muted); display:block; margin-bottom:5px;}
+  .field input, .field select{
+    width:100%; padding:11px 12px; border-radius:10px; border:1px solid var(--tan);
+    font-size:13px; font-family:'Inter',sans-serif; background:white; color:var(--charcoal);
+  }
+  .modal-actions{display:flex; gap:10px; margin-top:16px;}
+  .modal-actions .btn{flex:1;}
+
+  .toast{
+    position:fixed; bottom:20px; left:50%; transform:translateX(-50%);
+    background:var(--charcoal); color:var(--cream); padding:10px 18px; border-radius:999px;
+    font-size:12px; font-weight:600; z-index:200; opacity:0; pointer-events:none; transition:opacity .25s;
+  }
+  .toast.show{opacity:1;}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="wrap">
+    <div>
+      <div class="brand"><i class="fa-solid fa-bowl-food"></i> GharKaKhana</div>
+      <div class="subtitle">Cook Panel — Naseem Ben ki Rasoi</div>
+    </div>
+    <i class="fa-solid fa-chef-hat" style="color:#C9B79C; font-size:18px;"></i>
+  </div>
+</div>
+
+<div id="configBanner" style="display:none; background:#F6E2DC; color:var(--chili); font-size:11.5px; font-weight:600; text-align:center; padding:9px 16px;">
+  ⚠️ Firebase config nahi bhara — abhi local demo mode mein hai (changes save nahi honge, refresh pe reset ho jayenge).
+</div>
+
+<div class="tabs">
+  <div class="tab active" data-tab="orders" onclick="switchTab('orders')"><i class="fa-solid fa-receipt"></i> Orders</div>
+  <div class="tab" data-tab="menu" onclick="switchTab('menu')"><i class="fa-solid fa-list"></i> Menu</div>
+</div>
+
+<div class="wrap">
+  <div class="stat-row" id="statRow"></div>
+
+  <div class="add-bar">
+    <h2 id="sectionTitle">Orders</h2>
+    <button class="btn btn-primary" id="addBtn" onclick="openModal()" style="display:none;"><i class="fa-solid fa-plus"></i>Add Dish</button>
+  </div>
+
+  <div id="list"></div>
+</div>
+
+<div class="overlay" id="overlay">
+  <div class="modal">
+    <h3 id="modalTitle">Nayi Dish Add Karo</h3>
+    <div>
+      <div class="field">
+        <label>Dish ka naam</label>
+        <input type="text" id="f_name" placeholder="e.g. Gujarati Thali">
+      </div>
+      <div class="field">
+        <label>Type</label>
+        <select id="f_type">
+          <option value="veg">Veg</option>
+          <option value="nonveg">Non-Veg</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Category</label>
+        <select id="f_category">
+          <option value="thali">Thali</option>
+          <option value="roti">Roti &amp; Mande</option>
+          <option value="nashta">Nashta</option>
+          <option value="chai">Chai</option>
+          <option value="mithai">Mithai</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Unit</label>
+        <select id="f_unit">
+          <option value="kg">Per kg</option>
+          <option value="piece">Per piece</option>
+          <option value="cup">Per cup</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Price (₹)</label>
+        <input type="number" id="f_price" placeholder="e.g. 260">
+      </div>
+      <div class="field">
+        <label>Availability</label>
+        <select id="f_status">
+          <option value="active">Available</option>
+          <option value="inactive">Not available today</option>
+        </select>
+      </div>
+      <div id="formError" style="display:none; color:var(--chili); font-size:11.5px; font-weight:600; margin-bottom:8px;"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="saveDish()">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  // This cook's identity — matches the "cook" field used in the shared "menu" and
+  // "orders" collections (same ones admin.html reads/writes). In a real login system
+  // this would come from Firebase Auth instead of being hardcoded.
+  const COOK_NAME = "Naseem Ben ki Rasoi";
+
+  let menu = [];
+  let orders = [];
+  let currentTab = "orders";
+  let editingId = null;
+
+  const LOCAL_MENU_SEED = [
+    { name: "Gujarati Thali", type: "veg", category: "thali", unit: "kg", price: 260, status: "active" },
+    { name: "Bajra Roti + Sabzi", type: "veg", category: "roti", unit: "kg", price: 180, status: "active" },
+    { name: "Dal Dhokli", type: "veg", category: "thali", unit: "kg", price: 220, status: "inactive" },
+  ];
+
+  if(window.FIREBASE_CONFIGURED){
+    // Live listeners scoped to this cook only
+    db.collection("menu").where("cook", "==", COOK_NAME).onSnapshot(snapshot => {
+      menu = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      if(currentTab === "menu") render();
+    }, err => showConfigError(err));
+    db.collection("orders").where("cook", "==", COOK_NAME).onSnapshot(snapshot => {
+      orders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      if(currentTab === "orders") render();
+    }, err => showConfigError(err));
+  } else {
+    document.getElementById("configBanner").style.display = "block";
+    let idCounter = 1;
+    menu = LOCAL_MENU_SEED.map(item => ({ id: "local" + (idCounter++), ...item }));
+    orders = [];
+  }
+
+  function showConfigError(err){
+    console.error("Firestore error:", err);
+    const banner = document.getElementById("configBanner");
+    banner.style.display = "block";
+    banner.textContent = "⚠️ Firestore se connect nahi ho paya (" + err.code + "). Firestore rules check karo.";
+  }
+
+  function switchTab(tab){
+    currentTab = tab;
+    document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.tab === tab));
+    document.getElementById("addBtn").style.display = tab === "menu" ? "inline-flex" : "none";
+    document.getElementById("sectionTitle").textContent = tab === "menu" ? "Menu" : "Orders";
+    render();
+  }
+
+  function render(){
+    if(currentTab === "menu") renderMenu(); else renderOrders();
+  }
+
+  function renderMenu(){
+    const activeCount = menu.filter(i=>i.status==="active").length;
+    document.getElementById("statRow").innerHTML = `
+      <div class="stat"><b>${menu.length}</b><span>Total Dishes</span></div>
+      <div class="stat"><b>${activeCount}</b><span>Available</span></div>
+      <div class="stat"><b>${menu.length - activeCount}</b><span>Paused</span></div>
+    `;
+    const list = document.getElementById("list");
+    if(menu.length === 0){
+      list.innerHTML = `<div class="empty"><i class="fa-solid fa-utensils" style="font-size:22px; margin-bottom:8px; display:block;"></i>Koi dish nahi hai abhi. "Add Dish" dabao.</div>`;
+      return;
+    }
+    list.innerHTML = menu.map(item => `
+      <div class="card">
+        <div class="card-top">
+          <div class="thumb ${item.type}"><i class="fa-solid ${item.type === 'veg' ? 'fa-leaf' : 'fa-drumstick-bite'}"></i></div>
+          <div class="info">
+            <div class="name">${item.name}</div>
+            <div class="meta">₹${item.price}/kg</div>
+          </div>
+          <span class="badge ${item.status}">${item.status === "active" ? "Available" : "Paused"}</span>
+        </div>
+        <div class="row-actions">
+          <div class="icon-btn" onclick="openModal('${item.id}')"><i class="fa-solid fa-pen"></i>Edit</div>
+          <div class="icon-btn" onclick="toggleDishStatus('${item.id}')"><i class="fa-solid fa-toggle-on"></i>${item.status === "active" ? "Pause" : "Resume"}</div>
+          <div class="icon-btn danger" onclick="deleteDish('${item.id}')"><i class="fa-solid fa-trash"></i>Delete</div>
+        </div>
+      </div>
+    `).join("");
+  }
+
+  function renderOrders(){
+    const pendingCount = orders.filter(o=>o.status==="New").length;
+    const cookingCount = orders.filter(o=>o.status==="Cooking").length;
+    document.getElementById("statRow").innerHTML = `
+      <div class="stat"><b>${orders.length}</b><span>Total Today</span></div>
+      <div class="stat"><b>${pendingCount}</b><span>Pending Approval</span></div>
+      <div class="stat"><b>${cookingCount}</b><span>Cooking</span></div>
+    `;
+    const list = document.getElementById("list");
+    if(orders.length === 0){
+      list.innerHTML = `<div class="empty"><i class="fa-solid fa-receipt" style="font-size:22px; margin-bottom:8px; display:block;"></i>Abhi koi order nahi hai.</div>`;
+      return;
+    }
+    list.innerHTML = orders.map(o => `
+      <div class="card" style="${o.meal === 'Urgent' && o.status === 'New' ? 'border-color:var(--chili); border-width:1.5px;' : ''}">
+        <div class="card-top">
+          <div class="info">
+            <div class="order-item">
+              ${o.item}
+              ${o.meal === "Urgent" ? '<span class="badge" style="background:var(--chili); color:white; margin-left:6px;">URGENT</span>' : ''}
+            </div>
+            <div class="order-cust">${o.customer} • ${o.area} • <i class="fa-solid ${o.type === 'Pickup' ? 'fa-store' : 'fa-motorcycle'}"></i> ${o.type} • <i class="fa-solid ${o.meal === 'Lunch' ? 'fa-sun' : o.meal === 'Dinner' ? 'fa-moon' : 'fa-bolt'}"></i> ${o.meal} • #${o.id}</div>
+          </div>
+          <span class="badge ${o.status === 'New' ? 'inactive' : 'active'}">${o.status === "New" ? "Pending Approval" : o.status}</span>
+        </div>
+        ${o.status === "New" ? `
+          <div class="row-actions">
+            <div class="icon-btn" style="color:var(--sage); border-color:#DCE7D4;" onclick="advanceOrder('${o.id}','Cooking')"><i class="fa-solid fa-check"></i>Order Confirm Karo</div>
+            <div class="icon-btn danger" onclick="advanceOrder('${o.id}','Declined')"><i class="fa-solid fa-xmark"></i>Decline</div>
+          </div>
+        ` : o.status === "Cooking" ? `
+          <div class="row-actions">
+            <div class="icon-btn" onclick="advanceOrder('${o.id}', '${o.type === 'Pickup' ? 'Ready for pickup' : 'Ready for delivery'}')">
+              <i class="fa-solid fa-bell-concierge"></i>Mark ready
+            </div>
+          </div>
+        ` : ""}
+      </div>
+    `).join("");
+  }
+
+  function advanceOrder(id, newStatus){
+    if(!window.FIREBASE_CONFIGURED){
+      const o = orders.find(x => x.id === id);
+      if(o) o.status = newStatus;
+      showToast(`Order #${id} — ${newStatus} (local demo)`);
+      render();
+      return;
+    }
+    db.collection("orders").doc(id).update({ status: newStatus })
+      .then(() => {
+        showToast(newStatus === "Cooking"
+          ? `Order #${id} confirm ho gaya — customer ko notify kar diya`
+          : `Order #${id} — ${newStatus}`);
+      })
+      .catch(err => showToast("Error: " + err.message));
+  }
+
+  function openModal(id = null){
+    editingId = id;
+    document.getElementById("f_name").value = "";
+    document.getElementById("f_type").value = "veg";
+    document.getElementById("f_category").value = "thali";
+    document.getElementById("f_unit").value = "kg";
+    document.getElementById("f_price").value = "";
+    document.getElementById("f_status").value = "active";
+    document.getElementById("formError").style.display = "none";
+    if(id){
+      const item = menu.find(i => i.id === id);
+      document.getElementById("modalTitle").textContent = `${item.name} ko Edit Karo`;
+      document.getElementById("f_name").value = item.name;
+      document.getElementById("f_type").value = item.type || "veg";
+      document.getElementById("f_category").value = item.category || "thali";
+      document.getElementById("f_unit").value = item.unit || "kg";
+      document.getElementById("f_price").value = item.price;
+      document.getElementById("f_status").value = item.status;
+    } else {
+      document.getElementById("modalTitle").textContent = "Nayi Dish Add Karo";
+    }
+    document.getElementById("overlay").classList.add("open");
+  }
+
+  function closeModal(){
+    document.getElementById("overlay").classList.remove("open");
+    editingId = null;
+  }
+
+  function saveDish(){
+    const name = document.getElementById("f_name").value.trim();
+    const type = document.getElementById("f_type").value;
+    const category = document.getElementById("f_category").value;
+    const unit = document.getElementById("f_unit").value;
+    const price = parseFloat(document.getElementById("f_price").value);
+    const status = document.getElementById("f_status").value;
+
+    const errorBox = document.getElementById("formError");
+    if(!name || !price || price <= 0){
+      errorBox.textContent = "Dish ka naam aur sahi price dono bharna zaroori hai.";
+      errorBox.style.display = "block";
+      return;
+    }
+    errorBox.style.display = "none";
+
+    const payload = { name, type, category, unit, price, status, cook: COOK_NAME };
+
+    if(!window.FIREBASE_CONFIGURED){
+      if(editingId){
+        Object.assign(menu.find(i => i.id === editingId), payload);
+      } else {
+        menu.push({ id: "local" + Date.now(), ...payload });
+      }
+      showToast((editingId ? "Dish update" : "Dish add") + " ho gayi (local demo, save nahi hoga)");
+      closeModal();
+      render();
+      return;
+    }
+
+    const promise = editingId
+      ? db.collection("menu").doc(editingId).update(payload)
+      : db.collection("menu").add(payload);
+
+    promise
+      .then(() => showToast(editingId ? "Dish update ho gayi ✓" : "Dish add ho gayi ✓"))
+      .catch(err => showToast("Error: " + err.message));
+    closeModal();
+  }
+
+  function toggleDishStatus(id){
+    const item = menu.find(i => i.id === id);
+    const newStatus = item.status === "active" ? "inactive" : "active";
+
+    if(!window.FIREBASE_CONFIGURED){
+      item.status = newStatus;
+      showToast(`${item.name} ${newStatus === "active" ? "available" : "paused"} hai (local demo)`);
+      render();
+      return;
+    }
+
+    db.collection("menu").doc(id).update({ status: newStatus })
+      .then(() => showToast(`${item.name} ${newStatus === "active" ? "available" : "paused"} hai`))
+      .catch(err => showToast("Error: " + err.message));
+  }
+
+  function deleteDish(id){
+    const item = menu.find(i => i.id === id);
+    if(!confirm(`${item.name} ko menu se delete karna hai?`)) return;
+
+    if(!window.FIREBASE_CONFIGURED){
+      menu = menu.filter(i => i.id !== id);
+      showToast("Dish delete ho gayi (local demo)");
+      render();
+      return;
+    }
+
+    db.collection("menu").doc(id).delete()
+      .then(() => showToast("Dish delete ho gayi"))
+      .catch(err => showToast("Error: " + err.message));
+  }
+
+  function showToast(msg){
+    const toast = document.getElementById("toast");
+    toast.textContent = msg;
+    toast.classList.add("show");
+    setTimeout(()=> toast.classList.remove("show"), 1800);
+  }
+
+  render();
+</script>
+
+</body>
+</html>
