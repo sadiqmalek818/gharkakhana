@@ -101,15 +101,38 @@
   .profile-bar img{width:34px; height:34px; border-radius:50%; object-fit:cover; border:1px solid #5A4632;}
   .profile-bar .pb-qr{width:34px; height:34px; border-radius:8px; object-fit:cover; margin-left:auto; border:1px solid #5A4632;}
   .profile-bar .pb-label{font-size:9.5px; color:#C9B79C; text-align:right; line-height:1.3;}
+
+  .cook-pick-card{
+    display:flex; align-items:center; gap:12px; background:white; border:1px solid var(--tan);
+    border-radius:16px; padding:12px 14px; margin-bottom:10px; cursor:pointer;
+  }
+  .cook-pick-card:active{transform:scale(0.98);}
+  .cook-pick-card img{width:44px; height:44px; border-radius:50%; object-fit:cover; flex:0 0 auto;}
+  .cook-pick-card .cpc-fallback{
+    width:44px; height:44px; border-radius:50%; background:var(--tan); color:var(--charcoal);
+    display:flex; align-items:center; justify-content:center; font-weight:700; flex:0 0 auto;
+  }
+  .cook-pick-card .cpc-name{font-weight:700; font-size:13.5px;}
+  .cook-pick-card .cpc-area{font-size:11px; color:var(--text-soft); margin-top:1px;}
+  .switch-cook-link{font-size:9.5px; color:#C9B79C; text-decoration:underline; cursor:pointer; margin-left:8px; white-space:nowrap;}
 </style>
 </head>
 <body>
+
+<div id="cookPickerOverlay" style="display:none; position:fixed; inset:0; background:var(--cream); z-index:500; overflow-y:auto;">
+  <div style="padding:28px 20px;">
+    <div class="brand" style="font-size:19px; margin-bottom:4px;"><i class="fa-solid fa-bowl-food"></i> GharKaKhana</div>
+    <div style="font-family:'Fraunces',serif; font-weight:700; font-size:17px; margin:14px 0 4px;">Aap kaun se cook hain?</div>
+    <div style="font-size:12px; color:var(--text-soft); margin-bottom:16px;">Apna naam list mein se chuno — usi ke orders aur menu yahan dikhenge.</div>
+    <div id="cookPickerList"></div>
+  </div>
+</div>
 
 <div class="topbar">
   <div class="wrap">
     <div>
       <div class="brand"><i class="fa-solid fa-bowl-food"></i> GharKaKhana</div>
-      <div class="subtitle">Cook Panel — Naseem Ben ki Rasoi</div>
+      <div class="subtitle" id="subtitleText">Cook Panel</div>
     </div>
     <i class="fa-solid fa-chef-hat" style="color:#C9B79C; font-size:18px;"></i>
   </div>
@@ -196,9 +219,9 @@
 
 <script>
   // This cook's identity — matches the "cook" field used in the shared "menu" and
-  // "orders" collections (same ones admin.html reads/writes). In a real login system
-  // this would come from Firebase Auth instead of being hardcoded.
-  const COOK_NAME = "Naseem Ben ki Rasoi";
+  // "orders" collections (same ones admin.html reads/writes). Picked once from the
+  // list of cooks admin has added, then remembered on this device.
+  let COOK_NAME = localStorage.getItem("gkk_cook_name") || null;
 
   let menu = [];
   let orders = [];
@@ -212,25 +235,77 @@
     { name: "Dal Dhokli", type: "veg", category: "thali", unit: "kg", price: 220, status: "inactive" },
   ];
 
+  function chooseCook(name){
+    COOK_NAME = name;
+    localStorage.setItem("gkk_cook_name", name);
+    document.getElementById("cookPickerOverlay").style.display = "none";
+    document.getElementById("subtitleText").textContent = "Cook Panel — " + name;
+    initForCook();
+  }
+
+  function switchCook(){
+    localStorage.removeItem("gkk_cook_name");
+    location.reload();
+  }
+
+  function renderCookPicker(cooksList){
+    const list = document.getElementById("cookPickerList");
+    if(!cooksList.length){
+      list.innerHTML = `<div style="text-align:center; padding:20px; color:var(--text-soft); font-size:12.5px;">Abhi koi cook admin ne add nahi kiya hai. Pehle admin panel se apna naam add karwao.</div>`;
+      return;
+    }
+    list.innerHTML = cooksList.map(c => `
+      <div class="cook-pick-card" onclick="chooseCook('${c.name.replace(/'/g, "\\'")}')">
+        ${c.photoUrl ? `<img src="${c.photoUrl}">` : `<div class="cpc-fallback">${c.name.charAt(0)}</div>`}
+        <div>
+          <div class="cpc-name">${c.name}</div>
+          <div class="cpc-area">${c.area || ""}</div>
+        </div>
+      </div>
+    `).join("");
+  }
+
+  function initForCook(){
+    if(window.FIREBASE_CONFIGURED){
+      // Live listeners scoped to this cook only
+      db.collection("menu").where("cook", "==", COOK_NAME).onSnapshot(snapshot => {
+        menu = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        if(currentTab === "menu") render();
+      }, err => showConfigError(err));
+      db.collection("orders").where("cook", "==", COOK_NAME).onSnapshot(snapshot => {
+        orders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        if(currentTab === "orders") render();
+      }, err => showConfigError(err));
+      db.collection("cooks").where("name", "==", COOK_NAME).limit(1).onSnapshot(snapshot => {
+        cookProfile = snapshot.empty ? null : snapshot.docs[0].data();
+        renderProfileBar();
+      }, err => showConfigError(err));
+    } else {
+      document.getElementById("configBanner").style.display = "block";
+      let idCounter = 1;
+      menu = LOCAL_MENU_SEED.map(item => ({ id: "local" + (idCounter++), ...item }));
+      orders = [];
+    }
+    render();
+  }
+
   if(window.FIREBASE_CONFIGURED){
-    // Live listeners scoped to this cook only
-    db.collection("menu").where("cook", "==", COOK_NAME).onSnapshot(snapshot => {
-      menu = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      if(currentTab === "menu") render();
-    }, err => showConfigError(err));
-    db.collection("orders").where("cook", "==", COOK_NAME).onSnapshot(snapshot => {
-      orders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      if(currentTab === "orders") render();
-    }, err => showConfigError(err));
-    db.collection("cooks").where("name", "==", COOK_NAME).limit(1).onSnapshot(snapshot => {
-      cookProfile = snapshot.empty ? null : snapshot.docs[0].data();
-      renderProfileBar();
-    }, err => showConfigError(err));
+    if(COOK_NAME){
+      document.getElementById("subtitleText").textContent = "Cook Panel — " + COOK_NAME;
+      initForCook();
+    } else {
+      document.getElementById("cookPickerOverlay").style.display = "block";
+      db.collection("cooks").where("status", "==", "active").onSnapshot(snapshot => {
+        renderCookPicker(snapshot.docs.map(d => d.data()));
+      }, err => {
+        document.getElementById("cookPickerList").innerHTML = `<div style="text-align:center; padding:20px; color:var(--chili); font-size:12px;">Cooks load nahi ho paye: ${err.message}</div>`;
+      });
+    }
   } else {
-    document.getElementById("configBanner").style.display = "block";
-    let idCounter = 1;
-    menu = LOCAL_MENU_SEED.map(item => ({ id: "local" + (idCounter++), ...item }));
-    orders = [];
+    // Local demo mode (no Firebase config) — skip the picker, use the seed cook.
+    COOK_NAME = "Naseem Ben ki Rasoi";
+    document.getElementById("subtitleText").textContent = "Cook Panel — " + COOK_NAME;
+    initForCook();
   }
 
   function renderProfileBar(){
@@ -240,6 +315,7 @@
       <div class="profile-bar">
         ${cookProfile.photoUrl ? `<img src="${cookProfile.photoUrl}">` : ""}
         <div style="font-size:11.5px; font-weight:600;">${cookProfile.name}</div>
+        <span class="switch-cook-link" onclick="switchCook()">Switch</span>
         ${cookProfile.qrUrl ? `<img class="pb-qr" src="${cookProfile.qrUrl}"><div class="pb-label">Aapki<br>Settlement QR</div>` : ""}
       </div>
     `;
@@ -288,6 +364,7 @@
         </div>
         <div class="row-actions">
           <div class="icon-btn" onclick="toggleDishStatus('${item.id}')"><i class="fa-solid fa-toggle-on"></i>${item.status === "active" ? "Aaj ke liye Pause karo" : "Resume karo"}</div>
+          <div class="icon-btn danger" onclick="deleteDish('${item.id}')"><i class="fa-solid fa-trash"></i>Delete</div>
         </div>
       </div>
     `).join("");
@@ -460,8 +537,6 @@
     toast.classList.add("show");
     setTimeout(()=> toast.classList.remove("show"), 1800);
   }
-
-  render();
 </script>
 
 </body>
