@@ -872,6 +872,13 @@
     }
     errorBox.style.display = "none";
 
+    // Dishes store the cook's name as plain text (not a linked ID), so if a cook
+    // gets renamed we need to update that name on their existing dishes too —
+    // otherwise the cook panel / customer site stop matching them.
+    const oldName = (currentTab === "cooks" && editingId)
+      ? (data.cooks.find(i => i.id === editingId) || {}).name
+      : null;
+
     const payload = { name, area, phone, status, photoUrl: pendingPhoto.f_photo || "" };
     if(currentTab === "cooks") payload.qrUrl = pendingPhoto.f_qr || "";
 
@@ -880,6 +887,9 @@
         Object.assign(data[currentTab].find(i => i.id === editingId), payload);
       } else {
         data[currentTab].push({ id: "local" + Date.now(), ...payload });
+      }
+      if(oldName && oldName !== name){
+        data.menu.forEach(m => { if(m.cook === oldName) m.cook = name; });
       }
       showToast((editingId ? "Update" : "Add") + " ho gaya (local demo, save nahi hoga)");
       closeModal();
@@ -892,9 +902,23 @@
       : db.collection(currentTab).add(payload);
 
     promise
-      .then(() => showToast(editingId ? "Update ho gaya ✓" : "Add ho gaya ✓"))
+      .then(() => {
+        showToast(editingId ? "Update ho gaya ✓" : "Add ho gaya ✓");
+        if(oldName && oldName !== name) cascadeCookRename(oldName, name);
+      })
       .catch(err => showToast("Error: " + err.message));
     closeModal();
+  }
+
+  function cascadeCookRename(oldName, newName){
+    db.collection("menu").where("cook", "==", oldName).get().then(snapshot => {
+      if(snapshot.empty) return;
+      const batch = db.batch();
+      snapshot.docs.forEach(doc => batch.update(doc.ref, { cook: newName }));
+      batch.commit()
+        .then(() => showToast(`${snapshot.size} dish ka cook naam bhi update ho gaya ✓`))
+        .catch(err => showToast("Dishes update karne mein error: " + err.message));
+    }).catch(err => console.error("Cascade rename failed:", err));
   }
 
   function saveMenuItem(){
