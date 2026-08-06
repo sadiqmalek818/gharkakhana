@@ -743,6 +743,7 @@
             <div class="order-item">${o.item}${o.meal === "Urgent" ? '<span class="urgent-tag">URGENT</span>' : ""}</div>
             <div class="order-meta">${o.customer} • ${o.cook} • ${o.area}</div>
             <div class="order-meta"><i class="fa-solid ${o.type === "Pickup" ? "fa-store" : "fa-motorcycle"}"></i> ${o.type} • <i class="fa-solid ${o.meal === "Lunch" ? "fa-sun" : o.meal === "Dinner" ? "fa-moon" : "fa-bolt"}"></i> ${o.meal} • #${o.id}</div>
+            ${o.orderGroupId ? `<div class="order-meta" style="color:var(--turmeric);"><i class="fa-solid fa-layer-group"></i> Apna Thaal combo — group #${o.orderGroupId} (alag cooks ke liye alag ticket)</div>` : ""}
           </div>
           <span class="badge ${o.status === "Pending" ? "inactive" : o.status === "Declined" ? "inactive" : "active"}">${o.status}</span>
         </div>

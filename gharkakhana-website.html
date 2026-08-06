@@ -1179,30 +1179,52 @@
       const isToday = orderDate === todayISO();
       const dateLabel = isToday ? "Aaj" : new Date(orderDate + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 
-      // Distinct cooks involved in this order (single cook if it's a normal order,
-      // "N alag cooks" if it includes an Apna Thaal combo)
-      const cookNames = new Set(cart.map(i => i.cook));
-      const cookLabel = cookNames.size === 1 ? Array.from(cookNames)[0] : `${cookNames.size} alag cooks`;
+      // An Apna Thaal order can include dishes from several cooks. Each cook only
+      // ever sees orders where the "cook" field matches their own name exactly —
+      // so a combined "3 alag cooks" label would never reach anyone. Instead, split
+      // into one order ticket per cook (same shared group id), each with just that
+      // cook's items and subtotal — admin still sees them tagged as one combo order.
+      const byCook = {};
+      cart.forEach(i => {
+        if(!byCook[i.cook]) byCook[i.cook] = [];
+        byCook[i.cook].push(i);
+      });
+      const cookNames = Object.keys(byCook);
+      const isMultiCook = cookNames.length > 1;
 
-      const orderDoc = {
-        item: cart.map(i => i.name).join(", "),
+      const baseFields = {
         customer: customerName,
         customerPhone: customerPhone,
-        cook: cookLabel,
         area: fulfilment === "delivery" ? deliveryAddress : "Pickup",
         type: fulfilment === "pickup" ? "Pickup" : "Delivery",
-        meal: mealType === "lunch" ? "Lunch" : mealType === "dinner" ? "Dinner" : "Urgent",
+        meal: mealLabel,
         date: orderDate,
-        total: cartTotal(),
         status: "Pending",
       };
 
       if(window.FIREBASE_CONFIGURED){
-        db.collection("orders").doc(orderId).set(orderDoc).catch(err => {
-          console.error("Order save failed:", err);
-        });
+        if(isMultiCook){
+          cookNames.forEach((cookName, idx) => {
+            const items = byCook[cookName];
+            const subTotal = items.reduce((s, i) => s + i.total, 0);
+            db.collection("orders").doc(`${orderId}-${idx + 1}`).set({
+              ...baseFields,
+              item: items.map(i => i.name).join(", "),
+              cook: cookName,
+              total: subTotal,
+              orderGroupId: orderId,
+            }).catch(err => console.error("Order save failed:", err));
+          });
+        } else {
+          db.collection("orders").doc(orderId).set({
+            ...baseFields,
+            item: cart.map(i => i.name).join(", "),
+            cook: cookNames[0],
+            total: cartTotal(),
+          }).catch(err => console.error("Order save failed:", err));
+        }
       } else {
-        console.warn("Firebase not configured — order not saved:", orderDoc);
+        console.warn("Firebase not configured — order not saved:", { orderId, byCook });
       }
 
       modal.innerHTML = `
