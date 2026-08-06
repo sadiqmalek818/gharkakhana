@@ -292,6 +292,31 @@
   .est-people{color:var(--sage); font-weight:600; display:flex; align-items:center; gap:4px;}
   .est-total{color:var(--charcoal); font-weight:700;}
 
+  /* Cook card: one card per cook, dishes scroll horizontally inside it */
+  .cook-card{
+    background:white; border:1px solid var(--tan); border-radius:20px;
+    padding:14px; margin-bottom:14px; box-shadow:0 4px 16px rgba(43,27,23,0.06);
+  }
+  .cook-card .cook-group-head{padding:0 0 10px;}
+  .dish-scroll{
+    display:flex; gap:10px; overflow-x:auto; padding-bottom:4px; margin-bottom:12px;
+    scrollbar-width:none; -ms-overflow-style:none;
+  }
+  .dish-scroll::-webkit-scrollbar{display:none;}
+  .dish-chip{flex:0 0 auto; width:70px; text-align:center; cursor:pointer; opacity:0.7;}
+  .dish-chip.active{opacity:1;}
+  .dish-media.chip{width:70px; height:70px; border-radius:14px; border:2px solid transparent;}
+  .dish-chip.active .dish-media.chip{border-color:var(--chili);}
+  .dish-chip .dm-icon{font-size:26px;}
+  .dish-chip .dm-vegdot{width:12px; height:12px; top:5px; left:5px;}
+  .dish-chip-name{
+    font-size:10px; font-weight:700; margin-top:5px; color:var(--charcoal);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; width:70px;
+  }
+  .order-panel{border-top:1px dashed var(--tan); padding-top:12px;}
+  .order-panel .dish-name{font-size:14px; font-weight:700;}
+  .order-panel .dish-cook{font-size:10.8px; color:var(--text-soft); margin-top:1px;}
+
   /* How it works */
   .steps{display:flex; flex-direction:column; gap:14px;}
   .step{display:flex; gap:14px; align-items:flex-start;}
@@ -728,6 +753,8 @@
       { name: "Mohanthal", cook: "Javed Halwai", type: "veg", category: "mithai", unit: "kg", price: 450, status: "active" },
     ];
 
+    let menuGroups = []; // [{cook, items:[...]}] — used by selectDish/updateEstimate/addToCart
+
     function renderMenuList(items){
       const container = document.getElementById("menuList");
       const active = items.filter(i => i.status === "active");
@@ -746,53 +773,85 @@
         }
         groups[groupIndex[item.cook]].items.push(item);
       });
+      menuGroups = groups;
 
-      container.innerHTML = groups.map(group => `
-        <div class="cook-group-head">
-          <div class="cgh-left">${cookPhotoMap[group.cook] ? `<img class="cgh-avatar" src="${cookPhotoMap[group.cook]}">` : `<i class="fa-solid fa-kitchen-set"></i>`}<div><div class="cgh-name">${group.cook}</div></div></div>
+      // One card per cook — dishes scroll horizontally inside it, so a cook with
+      // many dishes (tandoori, lollipop, handi...) doesn't make the page taller.
+      container.innerHTML = groups.map((group, gi) => `
+        <div class="cook-card">
+          <div class="cook-group-head">
+            <div class="cgh-left">${cookPhotoMap[group.cook] ? `<img class="cgh-avatar" src="${cookPhotoMap[group.cook]}">` : `<i class="fa-solid fa-kitchen-set"></i>`}<div><div class="cgh-name">${group.cook}</div></div></div>
+          </div>
+          <div class="dish-scroll" id="dishScroll-${gi}">
+            ${group.items.map((item, ii) => {
+              const icon = iconForItem(item);
+              const vegClass = item.type === "nonveg" ? "nonveg" : "";
+              return `
+              <div class="dish-chip ${ii === 0 ? "active" : ""}" id="chip-${gi}-${ii}" data-cat="${item.category}" onclick="selectDish(${gi},${ii})">
+                <div class="dish-media chip cat-${item.category}">${item.photoUrl ? `<img src="${item.photoUrl}">` : `<i class="fa-solid ${icon} dm-icon"></i>`}<span class="dm-vegdot ${vegClass}"></span></div>
+                <div class="dish-chip-name">${item.name}</div>
+              </div>`;
+            }).join("")}
+          </div>
+          <div class="order-panel" id="orderPanel-${gi}"></div>
         </div>
-        ${group.items.map(item => {
-          const icon = iconForItem(item);
-          const vegClass = item.type === "nonveg" ? "nonveg" : "";
-          const isPercapita = item.category === "roti";
-          const defaultQty = firstQtyValue(item.unit);
-          const defaultTotal = Math.round(item.price * defaultQty);
-          const defaultPeopleText = `~${estimatePeople(item.unit, defaultQty)} logo ke liye`;
-          return `
-          <div class="dish-card" data-price="${item.price}" data-unit="${item.unit}" data-cat="${item.category}" ${isPercapita ? 'data-percapita="true" data-mode="unit"' : ""}>
-            <div class="dish-media cat-${item.category}">${item.photoUrl ? `<img src="${item.photoUrl}">` : `<i class="fa-solid ${icon} dm-icon"></i>`}<span class="dm-vegdot ${vegClass}"></span></div>
-            <div class="dish-info">
-              <div class="dish-top">
-                <div>
-                  <div class="dish-name">${item.name}</div>
-                  <div class="dish-cook">${group.cook}</div>
-                </div>
-              </div>
-              <div class="dish-bottom">
-                <div class="price">₹${item.price} <span class="unit">/${item.unit}</span></div>
-              </div>
-              ${isPercapita ? `
-              <div class="mode-toggle">
-                <div class="mode-btn active" onclick="setOrderMode(this, 'unit')">${item.unit === "kg" ? "Kg mein order" : "Unit mein order"}</div>
-                <div class="mode-btn" onclick="setOrderMode(this, 'people')">Logo ki ginti se</div>
-              </div>` : ""}
-              <div class="qty-row">
-                <label>Quantity</label>
-                <select class="qty-select" onchange="updateEstimate(this)">${qtyOptionsHTML(item.unit, "unit")}</select>
-              </div>
-              <div class="estimate-row">
-                <span class="est-people"><i class="fa-solid fa-users"></i> <span class="est-people-text">${defaultPeopleText}</span></span>
-                <span class="est-total">Total: <span class="est-total-amount">₹${defaultTotal}</span></span>
-              </div>
-              <button class="add-btn full" onclick="addToCart(this)">+ Cart mein add karo</button>
-            </div>
-          </div>`;
-        }).join("")}
       `).join("");
+
+      groups.forEach((g, gi) => { if(g.items.length) renderOrderPanel(gi, 0); });
 
       // Re-apply any active category filter to the freshly rendered cards
       const activeChip = document.querySelector("#categoryChips .cat-icon.active");
       if(activeChip) filterCategory(activeChip.dataset.cat);
+    }
+
+    function selectDish(gi, ii){
+      document.querySelectorAll(`#dishScroll-${gi} .dish-chip`).forEach(c => c.classList.remove("active"));
+      const chip = document.getElementById(`chip-${gi}-${ii}`);
+      if(chip) chip.classList.add("active");
+      renderOrderPanel(gi, ii);
+    }
+
+    function renderOrderPanel(gi, ii){
+      const group = menuGroups[gi];
+      const item = group.items[ii];
+      const panel = document.getElementById(`orderPanel-${gi}`);
+      if(!panel || !item) return;
+      const isPercapita = item.category === "roti";
+      const defaultQty = firstQtyValue(item.unit);
+      const defaultTotal = Math.round(item.price * defaultQty);
+      const defaultPeopleText = `~${estimatePeople(item.unit, defaultQty)} logo ke liye`;
+
+      panel.dataset.price = item.price;
+      panel.dataset.unit = item.unit;
+      panel.dataset.mode = "unit";
+      panel.dataset.name = item.name;
+      panel.dataset.cook = group.cook;
+
+      panel.innerHTML = `
+        <div class="dish-top">
+          <div>
+            <div class="dish-name">${item.name}</div>
+            <div class="dish-cook">${group.cook}</div>
+          </div>
+        </div>
+        <div class="dish-bottom">
+          <div class="price">₹${item.price} <span class="unit">/${item.unit}</span></div>
+        </div>
+        ${isPercapita ? `
+        <div class="mode-toggle">
+          <div class="mode-btn active" onclick="setOrderMode(this, 'unit')">${item.unit === "kg" ? "Kg mein order" : "Unit mein order"}</div>
+          <div class="mode-btn" onclick="setOrderMode(this, 'people')">Logo ki ginti se</div>
+        </div>` : ""}
+        <div class="qty-row">
+          <label>Quantity</label>
+          <select class="qty-select" onchange="updateEstimate(this)">${qtyOptionsHTML(item.unit, "unit")}</select>
+        </div>
+        <div class="estimate-row">
+          <span class="est-people"><i class="fa-solid fa-users"></i> <span class="est-people-text">${defaultPeopleText}</span></span>
+          <span class="est-total">Total: <span class="est-total-amount">₹${defaultTotal}</span></span>
+        </div>
+        <button class="add-btn full" onclick="addToCart(this)">+ Cart mein add karo</button>
+      `;
     }
 
     let cookPhotoMap = {};
@@ -827,20 +886,20 @@
     }
 
     function setOrderMode(btnEl, mode){
-      const card = btnEl.closest(".dish-card");
-      card.dataset.mode = mode;
-      card.querySelectorAll(".mode-btn").forEach(b => b.classList.remove("active"));
+      const panel = btnEl.closest(".order-panel");
+      panel.dataset.mode = mode;
+      panel.querySelectorAll(".mode-btn").forEach(b => b.classList.remove("active"));
       btnEl.classList.add("active");
-      const select = card.querySelector(".qty-select");
-      select.innerHTML = qtyOptionsHTML(card.dataset.unit, mode);
+      const select = panel.querySelector(".qty-select");
+      select.innerHTML = qtyOptionsHTML(panel.dataset.unit, mode);
       updateEstimate(select);
     }
 
     function updateEstimate(selectEl){
-      const card = selectEl.closest(".dish-card");
-      const price = parseFloat(card.dataset.price);
-      const unit = card.dataset.unit;
-      const mode = card.dataset.mode || "unit";
+      const panel = selectEl.closest(".order-panel");
+      const price = parseFloat(panel.dataset.price);
+      const unit = panel.dataset.unit;
+      const mode = panel.dataset.mode || "unit";
       const val = parseFloat(selectEl.value);
 
       let total, peopleText;
@@ -853,8 +912,8 @@
         peopleText = `~${estimatePeople(unit, val)} logo ke liye`;
       }
 
-      card.querySelector(".est-total-amount").textContent = `₹${total}`;
-      card.querySelector(".est-people-text").textContent = peopleText;
+      panel.querySelector(".est-total-amount").textContent = `₹${total}`;
+      panel.querySelector(".est-people-text").textContent = peopleText;
     }
 
     // ---------- Cart & Checkout ----------
@@ -873,13 +932,13 @@
     const UPI_ID = "gharkakhana@upi"; // replace with real UPI ID before going live
 
     function addToCart(btn){
-      const card = btn.closest(".dish-card");
-      const name = card.querySelector(".dish-name").textContent;
-      const cook = card.querySelector(".dish-cook").textContent.split("•")[0].trim();
-      const price = parseFloat(card.dataset.price);
-      const unit = card.dataset.unit;
-      const mode = card.dataset.mode || "unit";
-      const val = parseFloat(card.querySelector(".qty-select").value);
+      const panel = btn.closest(".order-panel");
+      const name = panel.dataset.name;
+      const cook = panel.dataset.cook;
+      const price = parseFloat(panel.dataset.price);
+      const unit = panel.dataset.unit;
+      const mode = panel.dataset.mode || "unit";
+      const val = parseFloat(panel.querySelector(".qty-select").value);
 
       let meta, total;
       if(mode === "people"){
@@ -1171,12 +1230,25 @@
     // ---------- Category filter ----------
     function filterCategory(cat){
       document.querySelectorAll("#categoryChips .cat-icon").forEach(c => c.classList.toggle("active", c.dataset.cat === cat));
-      document.querySelectorAll(".dish-card").forEach(card => {
-        const show = cat === "all" || card.dataset.cat === cat;
-        card.style.display = show ? "flex" : "none";
-        const header = card.previousElementSibling;
-        if(header && header.classList.contains("cook-group-head")){
-          header.style.display = show ? "flex" : "none";
+      document.querySelectorAll(".cook-card").forEach(card => {
+        const chips = [...card.querySelectorAll(".dish-chip")];
+        let anyVisible = false;
+        let activeStillVisible = false;
+        chips.forEach(chip => {
+          const show = cat === "all" || chip.dataset.cat === cat;
+          chip.style.display = show ? "" : "none";
+          if(show){
+            anyVisible = true;
+            if(chip.classList.contains("active")) activeStillVisible = true;
+          }
+        });
+        card.style.display = anyVisible ? "" : "none";
+        if(anyVisible && !activeStillVisible){
+          const firstVisible = chips.find(c => c.style.display !== "none");
+          if(firstVisible){
+            const [, gi, ii] = firstVisible.id.split("-");
+            selectDish(Number(gi), Number(ii));
+          }
         }
       });
     }
