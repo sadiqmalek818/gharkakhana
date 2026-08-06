@@ -96,6 +96,11 @@
     font-size:12px; font-weight:600; z-index:200; opacity:0; pointer-events:none; transition:opacity .25s;
   }
   .toast.show{opacity:1;}
+
+  .profile-bar{display:flex; align-items:center; gap:10px; background:var(--card); color:var(--cream); padding:10px 18px;}
+  .profile-bar img{width:34px; height:34px; border-radius:50%; object-fit:cover; border:1px solid #5A4632;}
+  .profile-bar .pb-qr{width:34px; height:34px; border-radius:8px; object-fit:cover; margin-left:auto; border:1px solid #5A4632;}
+  .profile-bar .pb-label{font-size:9.5px; color:#C9B79C; text-align:right; line-height:1.3;}
 </style>
 </head>
 <body>
@@ -114,6 +119,8 @@
   ⚠️ Firebase config nahi bhara — abhi local demo mode mein hai (changes save nahi honge, refresh pe reset ho jayenge).
 </div>
 
+<div id="profileBar"></div>
+
 <div class="tabs">
   <div class="tab active" data-tab="orders" onclick="switchTab('orders')"><i class="fa-solid fa-receipt"></i> Orders</div>
   <div class="tab" data-tab="menu" onclick="switchTab('menu')"><i class="fa-solid fa-list"></i> Menu</div>
@@ -124,7 +131,8 @@
 
   <div class="add-bar">
     <h2 id="sectionTitle">Orders</h2>
-    <button class="btn btn-primary" id="addBtn" onclick="openModal()" style="display:none;"><i class="fa-solid fa-plus"></i>Add Dish</button>
+    <!-- Dishes ab sirf Admin panel se add/edit/delete hote hain — cook sirf availability pause/resume kar sakta hai -->
+    <button class="btn btn-primary" id="addBtn" style="display:none;"><i class="fa-solid fa-plus"></i>Add Dish</button>
   </div>
 
   <div id="list"></div>
@@ -194,6 +202,7 @@
 
   let menu = [];
   let orders = [];
+  let cookProfile = null;
   let currentTab = "orders";
   let editingId = null;
 
@@ -213,11 +222,27 @@
       orders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       if(currentTab === "orders") render();
     }, err => showConfigError(err));
+    db.collection("cooks").where("name", "==", COOK_NAME).limit(1).onSnapshot(snapshot => {
+      cookProfile = snapshot.empty ? null : snapshot.docs[0].data();
+      renderProfileBar();
+    }, err => showConfigError(err));
   } else {
     document.getElementById("configBanner").style.display = "block";
     let idCounter = 1;
     menu = LOCAL_MENU_SEED.map(item => ({ id: "local" + (idCounter++), ...item }));
     orders = [];
+  }
+
+  function renderProfileBar(){
+    const bar = document.getElementById("profileBar");
+    if(!cookProfile){ bar.innerHTML = ""; return; }
+    bar.innerHTML = `
+      <div class="profile-bar">
+        ${cookProfile.photoUrl ? `<img src="${cookProfile.photoUrl}">` : ""}
+        <div style="font-size:11.5px; font-weight:600;">${cookProfile.name}</div>
+        ${cookProfile.qrUrl ? `<img class="pb-qr" src="${cookProfile.qrUrl}"><div class="pb-label">Aapki<br>Settlement QR</div>` : ""}
+      </div>
+    `;
   }
 
   function showConfigError(err){
@@ -254,7 +279,7 @@
     list.innerHTML = menu.map(item => `
       <div class="card">
         <div class="card-top">
-          <div class="thumb ${item.type}"><i class="fa-solid ${item.type === 'veg' ? 'fa-leaf' : 'fa-drumstick-bite'}"></i></div>
+          <div class="thumb ${item.type}" style="${item.photoUrl ? 'padding:0; overflow:hidden;' : ''}">${item.photoUrl ? `<img src="${item.photoUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:12px;">` : `<i class="fa-solid ${item.type === 'veg' ? 'fa-leaf' : 'fa-drumstick-bite'}"></i>`}</div>
           <div class="info">
             <div class="name">${item.name}</div>
             <div class="meta">₹${item.price}/kg</div>
@@ -262,29 +287,29 @@
           <span class="badge ${item.status}">${item.status === "active" ? "Available" : "Paused"}</span>
         </div>
         <div class="row-actions">
-          <div class="icon-btn" onclick="openModal('${item.id}')"><i class="fa-solid fa-pen"></i>Edit</div>
-          <div class="icon-btn" onclick="toggleDishStatus('${item.id}')"><i class="fa-solid fa-toggle-on"></i>${item.status === "active" ? "Pause" : "Resume"}</div>
-          <div class="icon-btn danger" onclick="deleteDish('${item.id}')"><i class="fa-solid fa-trash"></i>Delete</div>
+          <div class="icon-btn" onclick="toggleDishStatus('${item.id}')"><i class="fa-solid fa-toggle-on"></i>${item.status === "active" ? "Aaj ke liye Pause karo" : "Resume karo"}</div>
         </div>
       </div>
     `).join("");
   }
 
   function renderOrders(){
-    const pendingCount = orders.filter(o=>o.status==="New").length;
-    const cookingCount = orders.filter(o=>o.status==="Cooking").length;
+    // Orders sirf tab dikhte hain jab admin unhe approve kar chuka ho (status !== "Pending")
+    const visibleOrders = orders.filter(o => o.status !== "Pending");
+    const newCount = visibleOrders.filter(o=>o.status==="Confirmed").length;
+    const cookingCount = visibleOrders.filter(o=>o.status==="Cooking").length;
     document.getElementById("statRow").innerHTML = `
-      <div class="stat"><b>${orders.length}</b><span>Total Today</span></div>
-      <div class="stat"><b>${pendingCount}</b><span>Pending Approval</span></div>
+      <div class="stat"><b>${visibleOrders.length}</b><span>Total Today</span></div>
+      <div class="stat"><b>${newCount}</b><span>Naye Orders</span></div>
       <div class="stat"><b>${cookingCount}</b><span>Cooking</span></div>
     `;
     const list = document.getElementById("list");
-    if(orders.length === 0){
+    if(visibleOrders.length === 0){
       list.innerHTML = `<div class="empty"><i class="fa-solid fa-receipt" style="font-size:22px; margin-bottom:8px; display:block;"></i>Abhi koi order nahi hai.</div>`;
       return;
     }
-    list.innerHTML = orders.map(o => `
-      <div class="card" style="${o.meal === 'Urgent' && o.status === 'New' ? 'border-color:var(--chili); border-width:1.5px;' : ''}">
+    list.innerHTML = visibleOrders.map(o => `
+      <div class="card" style="${o.meal === 'Urgent' && o.status === 'Confirmed' ? 'border-color:var(--chili); border-width:1.5px;' : ''}">
         <div class="card-top">
           <div class="info">
             <div class="order-item">
@@ -293,9 +318,9 @@
             </div>
             <div class="order-cust">${o.customer} • ${o.area} • <i class="fa-solid ${o.type === 'Pickup' ? 'fa-store' : 'fa-motorcycle'}"></i> ${o.type} • <i class="fa-solid ${o.meal === 'Lunch' ? 'fa-sun' : o.meal === 'Dinner' ? 'fa-moon' : 'fa-bolt'}"></i> ${o.meal} • #${o.id}</div>
           </div>
-          <span class="badge ${o.status === 'New' ? 'inactive' : 'active'}">${o.status === "New" ? "Pending Approval" : o.status}</span>
+          <span class="badge ${o.status === 'Confirmed' ? 'inactive' : 'active'}">${o.status === "Confirmed" ? "Naya Order" : o.status}</span>
         </div>
-        ${o.status === "New" ? `
+        ${o.status === "Confirmed" ? `
           <div class="row-actions">
             <div class="icon-btn" style="color:var(--sage); border-color:#DCE7D4;" onclick="advanceOrder('${o.id}','Cooking')"><i class="fa-solid fa-check"></i>Order Confirm Karo</div>
             <div class="icon-btn danger" onclick="advanceOrder('${o.id}','Declined')"><i class="fa-solid fa-xmark"></i>Decline</div>
