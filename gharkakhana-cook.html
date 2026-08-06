@@ -266,6 +266,7 @@
   }
 
   function initForCook(){
+    renderProfileBar();
     if(window.FIREBASE_CONFIGURED){
       // Live listeners scoped to this cook only
       db.collection("menu").where("cook", "==", COOK_NAME).onSnapshot(snapshot => {
@@ -310,13 +311,12 @@
 
   function renderProfileBar(){
     const bar = document.getElementById("profileBar");
-    if(!cookProfile){ bar.innerHTML = ""; return; }
     bar.innerHTML = `
       <div class="profile-bar">
-        ${cookProfile.photoUrl ? `<img src="${cookProfile.photoUrl}">` : ""}
-        <div style="font-size:11.5px; font-weight:600;">${cookProfile.name}</div>
+        ${cookProfile && cookProfile.photoUrl ? `<img src="${cookProfile.photoUrl}">` : ""}
+        <div style="font-size:11.5px; font-weight:600;">${(cookProfile && cookProfile.name) || COOK_NAME}</div>
         <span class="switch-cook-link" onclick="switchCook()">Switch</span>
-        ${cookProfile.qrUrl ? `<img class="pb-qr" src="${cookProfile.qrUrl}"><div class="pb-label">Aapki<br>Settlement QR</div>` : ""}
+        ${cookProfile && cookProfile.qrUrl ? `<img class="pb-qr" src="${cookProfile.qrUrl}"><div class="pb-label">Aapki<br>Settlement QR</div>` : ""}
       </div>
     `;
   }
