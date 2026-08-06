@@ -1376,18 +1376,19 @@
       }
       const guests = parseInt(document.getElementById("comboGuests").value);
       let total = 0;
-      const lines = Array.from(selectedComboKeys).map(key => {
+      // One cart entry per dish (with its real cook) — not one combined entry —
+      // so each cook's items can later be split into their own order ticket.
+      Array.from(selectedComboKeys).forEach(key => {
         const { cookObj, item } = itemFromKey(key);
         const baseQty = item.perPersonQty * guests;
-        const lineTotal = item.price * baseQty;
+        const lineTotal = Math.round(item.price * baseQty);
         total += lineTotal;
-        return `${item.name} (${cookObj.cook}) — ~${baseQty % 1 === 0 ? baseQty : baseQty.toFixed(1)} ${unitLabel(item.unit)}`;
-      });
-      cart.push({
-        name: `Apna Thaal — ${guests} log (${selectedComboKeys.size} items)`,
-        cook: `${new Set(Array.from(selectedComboKeys).map(k => itemFromKey(k).cookObj.cook)).size} alag cooks`,
-        meta: lines.join(" • "),
-        total: Math.round(total),
+        cart.push({
+          name: `${item.name} (Apna Thaal — ${guests} log)`,
+          cook: cookObj.cook,
+          meta: `~${baseQty % 1 === 0 ? baseQty : baseQty.toFixed(1)} ${unitLabel(item.unit)} × ₹${item.price}/${item.unit}`,
+          total: lineTotal,
+        });
       });
       updateCartBar();
       showToast(`Apna Thaal cart mein add ho gaya — ₹${Math.round(total)}`);
