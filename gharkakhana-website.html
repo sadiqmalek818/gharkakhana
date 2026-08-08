@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#2B1B17">
-<title>GharKaKhana — Ghar ke cooks se, seedha aapki thali tak</title>
+<title>GharKaKhana</title>
 
 <!-- PWA: makes "Add to Home Screen" work on both Android and iPhone -->
 <link rel="manifest" href="manifest.json">
@@ -173,6 +173,7 @@
   .btn-primary{background:var(--chili); color:var(--cream);}
   .btn-secondary{background:transparent; color:var(--cream); border:1px solid #5A4632;}
   .btn i{margin-right:6px;}
+  .btn-sm{flex:none !important; padding:8px 12px; font-size:11.5px;}
 
   /* Sections */
   section{padding:32px 0;}
@@ -419,8 +420,18 @@
   <div class="topbar">
     <div class="wrap">
       <div class="brand"><i class="fa-solid fa-bowl-food"></i> GharKaKhana</div>
-      <div class="loc"><i class="fa-solid fa-location-dot"></i> Shah-e-Alam</div>
+      <div style="display:flex; align-items:center; gap:14px;">
+        <div class="loc"><i class="fa-solid fa-location-dot"></i> Shah-e-Alam</div>
+        <div id="installBtn" onclick="installApp()" style="display:none; align-items:center; gap:5px; cursor:pointer; font-size:11px; font-weight:600; color:var(--turmeric); border:1px solid #5A4632; padding:5px 10px; border-radius:999px;">
+          <i class="fa-solid fa-download"></i> Install
+        </div>
+        <i class="fa-solid fa-user" id="profileIcon" onclick="openProfile()" style="cursor:pointer; font-size:15px;"></i>
+      </div>
     </div>
+  </div>
+
+  <div class="overlay" id="profileOverlay">
+    <div class="modal" id="profileModal"></div>
   </div>
 
   <div class="hero">
@@ -926,9 +937,11 @@
       return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
     }
     let orderDate = todayISO();
-    let customerName = "";
-    let customerPhone = "";
-    let deliveryAddress = "";
+    // Simple device-based "profile" — no OTP/login, just remembers what the
+    // customer last entered so checkout and "My Orders" both use it.
+    let customerName = localStorage.getItem("gkk_customer_name") || "";
+    let customerPhone = localStorage.getItem("gkk_customer_phone") || "";
+    let deliveryAddress = localStorage.getItem("gkk_customer_address") || "";
     const UPI_ID = "gharkakhana@upi"; // replace with real UPI ID before going live
 
     function addToCart(btn){
@@ -1083,6 +1096,9 @@
       }
       customerName = name;
       customerPhone = phone;
+      localStorage.setItem("gkk_customer_name", customerName);
+      localStorage.setItem("gkk_customer_phone", customerPhone);
+      if(deliveryAddress) localStorage.setItem("gkk_customer_address", deliveryAddress);
       renderMealTimeStep();
     }
 
@@ -1210,17 +1226,21 @@
             db.collection("orders").doc(`${orderId}-${idx + 1}`).set({
               ...baseFields,
               item: items.map(i => i.name).join(", "),
+              items: items,
               cook: cookName,
               total: subTotal,
               orderGroupId: orderId,
+              createdAt: firebase.firestore.FieldValue.serverTimestamp(),
             }).catch(err => console.error("Order save failed:", err));
           });
         } else {
           db.collection("orders").doc(orderId).set({
             ...baseFields,
             item: cart.map(i => i.name).join(", "),
+            items: cart,
             cook: cookNames[0],
             total: cartTotal(),
+            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
           }).catch(err => console.error("Order save failed:", err));
         }
       } else {
@@ -1396,6 +1416,162 @@
 
     updateComboTotal();
 
+    // ---------- Profile / My Orders (simple, phone-based — no OTP login) ----------
+    let profileOrders = [];
+    let profileOrdersUnsub = null;
+    let profileOrdersSeen = null; // tracks statuses we've already shown, so we can chime on change
+
+    function openProfile(){
+      document.getElementById("profileOverlay").classList.add("open");
+      renderProfile();
+    }
+    function closeProfile(){
+      document.getElementById("profileOverlay").classList.remove("open");
+    }
+
+    function renderProfile(){
+      const modal = document.getElementById("profileModal");
+      if(!customerPhone){
+        modal.innerHTML = `
+          <h3>Aapki Profile</h3>
+          <div class="field">
+            <label>Naam</label>
+            <input type="text" id="p_name" value="${customerName}" placeholder="e.g. Imran Shaikh">
+          </div>
+          <div class="field">
+            <label>Phone Number</label>
+            <input type="tel" id="p_phone" value="${customerPhone}" placeholder="e.g. 98765 43210">
+          </div>
+          <p style="font-size:11px; color:var(--text-soft); margin:6px 0 12px;">Isse hum aapke past orders yaad rakh sakte hain — koi OTP/password nahi chahiye.</p>
+          <div class="modal-actions">
+            <button class="btn btn-ghost" style="flex:1;" onclick="closeProfile()">Band karo</button>
+            <button class="btn btn-primary" style="flex:1;" onclick="saveProfileBasics()">Save karo</button>
+          </div>
+        `;
+        return;
+      }
+
+      modal.innerHTML = `
+        <h3>Aapki Profile</h3>
+        <div style="background:var(--cream); border-radius:12px; padding:12px; margin-bottom:14px;">
+          <div style="font-weight:700; font-size:13.5px;">${customerName}</div>
+          <div style="font-size:11.5px; color:var(--text-soft); margin-top:2px;">${customerPhone}</div>
+          ${deliveryAddress ? `<div style="font-size:11.5px; color:var(--text-soft); margin-top:4px;"><i class="fa-solid fa-location-dot"></i> ${deliveryAddress}</div>` : ""}
+          <div style="display:flex; gap:8px; margin-top:8px;">
+            <button class="btn btn-ghost btn-sm" onclick="editProfileBasics()">Edit karo</button>
+            <button class="btn btn-ghost btn-sm" onclick="forgetProfile()">Alag number use karo</button>
+          </div>
+        </div>
+        <h3 style="font-size:13px;">Aapke Orders</h3>
+        <div id="profileOrdersList"><div style="text-align:center; padding:16px; color:var(--text-soft); font-size:12px;">Load ho raha hai...</div></div>
+        <div class="modal-actions"><button class="btn btn-ghost" style="flex:1;" onclick="closeProfile()">Band karo</button></div>
+      `;
+      loadProfileOrders();
+    }
+
+    function saveProfileBasics(){
+      const name = document.getElementById("p_name").value.trim();
+      const phone = document.getElementById("p_phone").value.trim();
+      if(!name || !phone){ showToast("Naam aur phone number bharo"); return; }
+      customerName = name;
+      customerPhone = phone;
+      localStorage.setItem("gkk_customer_name", name);
+      localStorage.setItem("gkk_customer_phone", phone);
+      renderProfile();
+    }
+
+    function editProfileBasics(){
+      const savedPhone = customerPhone;
+      customerPhone = ""; // temporarily blank so the form re-shows
+      renderProfile();
+      document.getElementById("p_phone").value = savedPhone;
+      customerPhone = savedPhone;
+    }
+
+    function forgetProfile(){
+      localStorage.removeItem("gkk_customer_name");
+      localStorage.removeItem("gkk_customer_phone");
+      customerName = "";
+      customerPhone = "";
+      if(profileOrdersUnsub){ profileOrdersUnsub(); profileOrdersUnsub = null; }
+      renderProfile();
+    }
+
+    function loadProfileOrders(){
+      if(!window.FIREBASE_CONFIGURED){
+        document.getElementById("profileOrdersList").innerHTML = `<div style="text-align:center; padding:16px; color:var(--text-soft); font-size:12px;">Demo mode mein order history available nahi hai.</div>`;
+        return;
+      }
+      if(profileOrdersUnsub) profileOrdersUnsub();
+      profileOrdersUnsub = db.collection("orders").where("customerPhone", "==", customerPhone).onSnapshot(snapshot => {
+        profileOrders = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+        profileOrders.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+        renderProfileOrdersList();
+      }, err => {
+        const el = document.getElementById("profileOrdersList");
+        if(el) el.innerHTML = `<div style="text-align:center; padding:16px; color:var(--chili); font-size:12px;">Orders load nahi ho paye.</div>`;
+      });
+    }
+
+    const STATUS_LABEL = { Pending: "Admin approval ka wait", Confirmed: "Cook ko mil gaya", Cooking: "Ban raha hai", Declined: "Cancel ho gaya" };
+    function renderProfileOrdersList(){
+      const el = document.getElementById("profileOrdersList");
+      if(!el) return; // panel closed before snapshot arrived
+      if(profileOrders.length === 0){
+        el.innerHTML = `<div style="text-align:center; padding:16px; color:var(--text-soft); font-size:12px;">Abhi koi order nahi hai.</div>`;
+      } else {
+        el.innerHTML = profileOrders.map((o, idx) => `
+          <div style="border:1px solid var(--tan); border-radius:12px; padding:10px 12px; margin-bottom:8px;">
+            <div style="display:flex; justify-content:space-between; gap:8px;">
+              <div style="font-size:12.5px; font-weight:600;">${o.item}</div>
+              <div style="font-size:10px; font-weight:700; color:${o.status === "Declined" ? "var(--chili)" : "var(--sage)"}; white-space:nowrap;">${STATUS_LABEL[o.status] || o.status || ""}</div>
+            </div>
+            <div style="font-size:10.5px; color:var(--text-soft); margin-top:3px;">${o.cook} • ${o.date} • ₹${o.total}</div>
+            ${o.items ? `<button class="btn btn-ghost btn-sm" style="margin-top:8px;" onclick="reorderPastOrder(${idx})"><i class="fa-solid fa-rotate-right"></i> Reorder karo</button>` : ""}
+          </div>
+        `).join("");
+      }
+      // Chime once if any status has changed since we last rendered — a lightweight
+      // in-app "notification" that doesn't need push/paid infra.
+      const statusMap = {};
+      profileOrders.forEach(o => { statusMap[o.id] = o.status; });
+      if(profileOrdersSeen){
+        const changed = Object.keys(statusMap).some(id => profileOrdersSeen[id] && profileOrdersSeen[id] !== statusMap[id]);
+        if(changed) playAlertSound();
+      }
+      profileOrdersSeen = statusMap;
+    }
+
+    function reorderPastOrder(idx){
+      const order = profileOrders[idx];
+      if(!order || !order.items || !order.items.length){
+        showToast("Ye purana order reorder ke liye available nahi hai");
+        return;
+      }
+      order.items.forEach(i => cart.push({ ...i }));
+      updateCartBar();
+      closeProfile();
+      showToast("Order cart mein wapas add ho gaya");
+      openCart();
+    }
+
+    // Small, dependency-free alert beep — used for order status changes here, and
+    // for new orders in admin/cook panels. No push-notification infra (service
+    // worker / paid Firebase plan) needed since this only fires while the tab is open.
+    function playAlertSound(){
+      try{
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.connect(g); g.connect(ctx.destination);
+        o.type = "sine"; o.frequency.value = 880;
+        g.gain.setValueAtTime(0.001, ctx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.2, ctx.currentTime + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+        o.start(); o.stop(ctx.currentTime + 0.35);
+      } catch(e){ /* audio not available — ignore */ }
+    }
+
     function showToast(msg){
       let toast = document.getElementById("siteToast");
       if(!toast){
@@ -1414,6 +1590,64 @@
       window.addEventListener("load", () => {
         navigator.serviceWorker.register("sw.js").catch(() => {});
       });
+    }
+
+    // ---------- "Install App" (Add to Home Screen) ----------
+    let deferredInstallPrompt = null;
+    window.addEventListener("beforeinstallprompt", e => {
+      e.preventDefault();
+      deferredInstallPrompt = e;
+      document.getElementById("installBtn").style.display = "flex";
+    });
+    window.addEventListener("appinstalled", () => {
+      document.getElementById("installBtn").style.display = "none";
+      deferredInstallPrompt = null;
+    });
+
+    function isIOS(){
+      return /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+    }
+    function isStandalone(){
+      return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+    }
+
+    async function installApp(){
+      if(deferredInstallPrompt){
+        deferredInstallPrompt.prompt();
+        await deferredInstallPrompt.userChoice;
+        deferredInstallPrompt = null;
+        document.getElementById("installBtn").style.display = "none";
+        return;
+      }
+      // iOS Safari has no install prompt API — walk them through the manual steps
+      if(isIOS()){
+        showIOSInstallSteps();
+      } else {
+        showToast("Install ka option abhi available nahi hai — browser ke 3-dot menu mein 'Add to Home Screen' try karo");
+      }
+    }
+
+    function showIOSInstallSteps(){
+      const modal = document.getElementById("profileModal");
+      modal.innerHTML = `
+        <h3>App Install Karo</h3>
+        <p style="font-size:12.5px; color:var(--text-soft); line-height:1.7; margin-bottom:14px;">
+          iPhone pe app install karne ke liye:<br><br>
+          1. Neeche <i class="fa-solid fa-arrow-up-from-bracket"></i> <b>Share</b> button dabao (Safari ke bottom bar mein)<br>
+          2. <b>"Add to Home Screen"</b> chuno<br>
+          3. <b>"Add"</b> dabao
+        </p>
+        <div class="modal-actions"><button class="btn btn-primary" style="flex:1;" onclick="closeProfile()">Theek hai</button></div>
+      `;
+      document.getElementById("profileOverlay").classList.add("open");
+    }
+
+    // Hide the install button once already installed, or show it directly for iOS
+    // (since iOS never fires beforeinstallprompt)
+    if(isStandalone()){
+      document.getElementById("installBtn").style.display = "none";
+    } else if(isIOS()){
+      document.getElementById("installBtn").style.display = "flex";
     }
   </script>
 </body>
