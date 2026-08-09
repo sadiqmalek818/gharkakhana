@@ -145,7 +145,7 @@
       <div class="subtitle" id="subtitleText">Cook Panel</div>
     </div>
     <div style="display:flex; align-items:center; gap:12px;">
-      <div id="installBtn" onclick="installApp()" style="display:none; align-items:center; gap:5px; cursor:pointer; font-size:10.5px; font-weight:700; color:var(--turmeric); border:1px solid #5A4632; padding:5px 9px; border-radius:999px;">
+      <div id="installBtn" onclick="installApp()" style="display:flex; align-items:center; gap:5px; cursor:pointer; font-size:10.5px; font-weight:700; color:var(--turmeric); border:1px solid #5A4632; padding:5px 9px; border-radius:999px;">
         <i class="fa-solid fa-download"></i> Install
       </div>
       <i class="fa-solid fa-chef-hat" style="color:#C9B79C; font-size:18px;"></i>
@@ -583,10 +583,27 @@
       <h3>Cook Panel</h3>
       <div id="qrCanvasBox" style="display:flex; justify-content:center; margin:14px 0;"></div>
       <p style="font-size:11px; color:var(--text-soft); word-break:break-all; text-align:center; margin-bottom:14px;">${url}</p>
-      <div class="modal-actions"><button class="btn btn-primary" style="flex:1;" onclick="document.getElementById('qrOverlay').classList.remove('open')">Band karo</button></div>
+      <div class="modal-actions" style="flex-wrap:wrap;">
+        <button class="btn btn-primary" style="flex:1;" onclick="nativeShare('${url}')"><i class="fa-solid fa-share-nodes"></i> Share Link</button>
+        <button class="btn btn-ghost" style="flex:1;" onclick="copyShareLink('${url}')"><i class="fa-solid fa-copy"></i> Copy Link</button>
+      </div>
+      <div class="modal-actions"><button class="btn btn-ghost" style="flex:1;" onclick="document.getElementById('qrOverlay').classList.remove('open')">Band karo</button></div>
     `;
     new QRCode(document.getElementById("qrCanvasBox"), { text: url, width: 180, height: 180, colorDark: "#2B1B17", colorLight: "#FBF3E7" });
     document.getElementById("qrOverlay").classList.add("open");
+  }
+
+  function nativeShare(url){
+    if(navigator.share){
+      navigator.share({ title: "GharKaKhana Cook Panel", url }).catch(() => {});
+    } else {
+      copyShareLink(url);
+    }
+  }
+
+  function copyShareLink(url){
+    navigator.clipboard.writeText(url).then(() => showToast("Link copy ho gaya"))
+      .catch(() => showToast("Copy nahi ho paya — manually select karke copy karo"));
   }
 
   // ---------- "Install App" (Add to Home Screen) ----------
@@ -611,8 +628,8 @@
       document.getElementById("installBtn").style.display = "none";
       return;
     }
+    const modal = document.getElementById("qrModal");
     if(isIOS()){
-      const modal = document.getElementById("qrModal");
       modal.innerHTML = `
         <h3>App Install Karo</h3>
         <p style="font-size:12.5px; color:var(--text-soft); line-height:1.7; margin-bottom:14px;">
@@ -622,13 +639,20 @@
         </p>
         <div class="modal-actions"><button class="btn btn-primary" style="flex:1;" onclick="document.getElementById('qrOverlay').classList.remove('open')">Theek hai</button></div>
       `;
-      document.getElementById("qrOverlay").classList.add("open");
     } else {
-      showToast("Browser ke 3-dot menu mein 'Add to Home Screen' try karo");
+      modal.innerHTML = `
+        <h3>App Install Karo</h3>
+        <p style="font-size:12.5px; color:var(--text-soft); line-height:1.7; margin-bottom:14px;">
+          1. Upar-right <b>⋮ (3-dot) menu</b> dabao<br>
+          2. <b>"Add to Home Screen"</b> ya <b>"Install app"</b> chuno<br>
+          3. Confirm karo — icon home screen pe aa jayega
+        </p>
+        <div class="modal-actions"><button class="btn btn-primary" style="flex:1;" onclick="document.getElementById('qrOverlay').classList.remove('open')">Theek hai</button></div>
+      `;
     }
+    document.getElementById("qrOverlay").classList.add("open");
   }
-  if(isStandalone()){ /* already installed */ }
-  else if(isIOS()){ document.getElementById("installBtn").style.display = "flex"; }
+  if(isStandalone()){ document.getElementById("installBtn").style.display = "none"; }
 
   if("serviceWorker" in navigator){
     window.addEventListener("load", () => navigator.serviceWorker.register("sw-cook.js").catch(() => {}));
