@@ -5,8 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#2B1B17">
 <title>GharKaKhana — Cook Panel</title>
+
+<!-- PWA: makes "Add to Home Screen" work -->
+<link rel="manifest" href="manifest-cook.json">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="GKK Cook">
+<link rel="apple-touch-icon" href="icon-192-cook.png">
+
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <!-- Firebase (Firestore) -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
@@ -134,8 +144,17 @@
       <div class="brand"><i class="fa-solid fa-bowl-food"></i> GharKaKhana</div>
       <div class="subtitle" id="subtitleText">Cook Panel</div>
     </div>
-    <i class="fa-solid fa-chef-hat" style="color:#C9B79C; font-size:18px;"></i>
+    <div style="display:flex; align-items:center; gap:12px;">
+      <div id="installBtn" onclick="installApp()" style="display:none; align-items:center; gap:5px; cursor:pointer; font-size:10.5px; font-weight:700; color:var(--turmeric); border:1px solid #5A4632; padding:5px 9px; border-radius:999px;">
+        <i class="fa-solid fa-download"></i> Install
+      </div>
+      <i class="fa-solid fa-chef-hat" style="color:#C9B79C; font-size:18px;"></i>
+    </div>
   </div>
+</div>
+
+<div class="overlay" id="qrOverlay">
+  <div class="modal" id="qrModal"></div>
 </div>
 
 <div id="configBanner" style="display:none; background:#F6E2DC; color:var(--chili); font-size:11.5px; font-weight:600; text-align:center; padding:9px 16px;">
@@ -273,9 +292,17 @@
         menu = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         if(currentTab === "menu") render();
       }, err => showConfigError(err));
+      let cookOrdersLoadedOnce = false;
       db.collection("orders").where("cook", "==", COOK_NAME).onSnapshot(snapshot => {
+        if(cookOrdersLoadedOnce){
+          const newConfirmed = snapshot.docChanges().some(c =>
+            (c.type === "added" || c.type === "modified") && c.doc.data().status === "Confirmed"
+          );
+          if(newConfirmed) playAlertSound();
+        }
         orders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         if(currentTab === "orders") render();
+        cookOrdersLoadedOnce = true;
       }, err => showConfigError(err));
       db.collection("cooks").where("name", "==", COOK_NAME).limit(1).onSnapshot(snapshot => {
         cookProfile = snapshot.empty ? null : snapshot.docs[0].data();
@@ -316,6 +343,7 @@
         ${cookProfile && cookProfile.photoUrl ? `<img src="${cookProfile.photoUrl}">` : ""}
         <div style="font-size:11.5px; font-weight:600;">${(cookProfile && cookProfile.name) || COOK_NAME}</div>
         <span class="switch-cook-link" onclick="switchCook()">Switch</span>
+        <span class="switch-cook-link" onclick="showAppQR()">Share</span>
         ${cookProfile && cookProfile.qrUrl ? `<img class="pb-qr" src="${cookProfile.qrUrl}"><div class="pb-label">Aapki<br>Settlement QR</div>` : ""}
       </div>
     `;
@@ -393,7 +421,7 @@
               ${o.item}
               ${o.meal === "Urgent" ? '<span class="badge" style="background:var(--chili); color:white; margin-left:6px;">URGENT</span>' : ''}
             </div>
-            <div class="order-cust">${o.customer} • ${o.area} • <i class="fa-solid ${o.type === 'Pickup' ? 'fa-store' : 'fa-motorcycle'}"></i> ${o.type} • <i class="fa-solid ${o.meal === 'Lunch' ? 'fa-sun' : o.meal === 'Dinner' ? 'fa-moon' : 'fa-bolt'}"></i> ${o.meal} • #${o.id}</div>
+            <div class="order-cust">${o.customer} • ${o.area} • <i class="fa-solid ${o.type === 'Pickup' ? 'fa-store' : 'fa-motorcycle'}"></i> ${o.type} • <i class="fa-solid ${o.meal === 'Lunch' ? 'fa-sun' : o.meal === 'Dinner' ? 'fa-moon' : o.meal === 'Urgent' ? 'fa-bolt' : 'fa-utensils'}"></i> ${o.meal} • #${o.id}</div>
           </div>
           <span class="badge ${o.status === 'Confirmed' ? 'inactive' : 'active'}">${o.status === "Confirmed" ? "Naya Order" : o.status}</span>
         </div>
@@ -529,6 +557,81 @@
     db.collection("menu").doc(id).delete()
       .then(() => showToast("Dish delete ho gayi"))
       .catch(err => showToast("Error: " + err.message));
+  }
+
+  // Dependency-free alert beep — plays when admin approves a new order for this
+  // cook, while this tab is open. No push-notification infra needed.
+  function playAlertSound(){
+    try{
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
+      o.type = "sine"; o.frequency.value = 880;
+      g.gain.setValueAtTime(0.001, ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.2, ctx.currentTime + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+      o.start(); o.stop(ctx.currentTime + 0.35);
+    } catch(e){ /* audio not available — ignore */ }
+  }
+
+  // ---------- Share / QR (e.g. admin/cook showing this link to a new cook) ----------
+  function showAppQR(){
+    const url = window.location.href.split("?")[0];
+    const modal = document.getElementById("qrModal");
+    modal.innerHTML = `
+      <h3>Cook Panel</h3>
+      <div id="qrCanvasBox" style="display:flex; justify-content:center; margin:14px 0;"></div>
+      <p style="font-size:11px; color:var(--text-soft); word-break:break-all; text-align:center; margin-bottom:14px;">${url}</p>
+      <div class="modal-actions"><button class="btn btn-primary" style="flex:1;" onclick="document.getElementById('qrOverlay').classList.remove('open')">Band karo</button></div>
+    `;
+    new QRCode(document.getElementById("qrCanvasBox"), { text: url, width: 180, height: 180, colorDark: "#2B1B17", colorLight: "#FBF3E7" });
+    document.getElementById("qrOverlay").classList.add("open");
+  }
+
+  // ---------- "Install App" (Add to Home Screen) ----------
+  let deferredInstallPrompt = null;
+  window.addEventListener("beforeinstallprompt", e => {
+    e.preventDefault();
+    deferredInstallPrompt = e;
+    document.getElementById("installBtn").style.display = "flex";
+  });
+  window.addEventListener("appinstalled", () => {
+    document.getElementById("installBtn").style.display = "none";
+    deferredInstallPrompt = null;
+  });
+  function isIOS(){ return /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream; }
+  function isStandalone(){ return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true; }
+
+  async function installApp(){
+    if(deferredInstallPrompt){
+      deferredInstallPrompt.prompt();
+      await deferredInstallPrompt.userChoice;
+      deferredInstallPrompt = null;
+      document.getElementById("installBtn").style.display = "none";
+      return;
+    }
+    if(isIOS()){
+      const modal = document.getElementById("qrModal");
+      modal.innerHTML = `
+        <h3>App Install Karo</h3>
+        <p style="font-size:12.5px; color:var(--text-soft); line-height:1.7; margin-bottom:14px;">
+          1. Neeche <i class="fa-solid fa-arrow-up-from-bracket"></i> <b>Share</b> button dabao<br>
+          2. <b>"Add to Home Screen"</b> chuno<br>
+          3. <b>"Add"</b> dabao
+        </p>
+        <div class="modal-actions"><button class="btn btn-primary" style="flex:1;" onclick="document.getElementById('qrOverlay').classList.remove('open')">Theek hai</button></div>
+      `;
+      document.getElementById("qrOverlay").classList.add("open");
+    } else {
+      showToast("Browser ke 3-dot menu mein 'Add to Home Screen' try karo");
+    }
+  }
+  if(isStandalone()){ /* already installed */ }
+  else if(isIOS()){ document.getElementById("installBtn").style.display = "flex"; }
+
+  if("serviceWorker" in navigator){
+    window.addEventListener("load", () => navigator.serviceWorker.register("sw-cook.js").catch(() => {}));
   }
 
   function showToast(msg){
