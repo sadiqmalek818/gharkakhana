@@ -337,8 +337,24 @@
       { key: "dinner", label: "Dinner", icon: "fa-moon", cutoffTime: "18:00" },
       { key: "urgent", label: "Urgent", icon: "fa-bolt", cutoffTime: "" },
     ],
+    events: [
+      { key: "mangni", label: "Mangni", icon: "fa-ring" },
+      { key: "birthday_party", label: "Birthday Party", icon: "fa-cake-candles" },
+      { key: "ziyarat", label: "Ziyarat", icon: "fa-mosque" },
+      { key: "niyaz", label: "Niyaz", icon: "fa-hands-praying" },
+      { key: "farmhouse_delivery", label: "Farmhouse Delivery", icon: "fa-tree" },
+      { key: "yaad", label: "Yaad", icon: "fa-dove" },
+    ],
     localities: [
       { key: "shah_e_alam", label: "Shah-e-Alam" },
+      { key: "gomtipur", label: "Gomtipur" },
+      { key: "bapunagar", label: "Bapunagar" },
+      { key: "juhapura", label: "Juhapura" },
+      { key: "jamalpur", label: "Jamalpur" },
+      { key: "kalupur", label: "Kalupur" },
+      { key: "dariyapur", label: "Dariyapur" },
+      { key: "shahpur", label: "Shahpur" },
+      { key: "vatva", label: "Vatva" },
     ],
     content: { about: "", privacy: "", contact: "" },
   };
@@ -413,12 +429,13 @@
         if(d.categories && d.categories.length) settings.categories = d.categories;
         if(d.units && d.units.length) settings.units = d.units;
         if(d.occasions && d.occasions.length) settings.occasions = d.occasions;
+        if(d.events && d.events.length) settings.events = d.events;
         if(d.localities && d.localities.length) settings.localities = d.localities;
       } else {
         // First run — seed the catalog doc with the defaults above.
         db.collection("settings").doc("catalog").set({
           categories: settings.categories, units: settings.units,
-          occasions: settings.occasions, localities: settings.localities,
+          occasions: settings.occasions, events: settings.events, localities: settings.localities,
         }).catch(()=>{});
       }
       if(currentTab === "settings") renderSettings();
@@ -604,6 +621,18 @@
       </div>
 
       <div class="settings-card">
+        <h3><i class="fa-solid fa-star"></i> "Kis Mauke Ke Liye" (Mangni, Birthday, waghera)</h3>
+        <p>Ye homepage pe occasion chips ki tarah dikhenge (Mangni, Birthday Party, Ziyarat waghera jaisa).</p>
+        <div class="chip-list">
+          ${settings.events.map(e => `<div class="chip">${e.label}<i class="fa-solid fa-xmark" onclick="removeEvent('${e.key}')"></i></div>`).join("")}
+        </div>
+        <div class="chip-add-row">
+          <input type="text" id="newEventInput" placeholder="e.g. Aqiqah">
+          <button class="btn btn-ghost btn-sm" onclick="addEvent()"><i class="fa-solid fa-plus"></i>Add</button>
+        </div>
+      </div>
+
+      <div class="settings-card">
         <h3><i class="fa-solid fa-location-dot"></i> Localities</h3>
         <p>Ye areas customer ko delivery location chunne ke liye dikhenge (website header aur footer dono jagah).</p>
         <div class="chip-list">
@@ -658,7 +687,7 @@
     }
     db.collection("settings").doc("catalog").set({
       categories: settings.categories, units: settings.units,
-      occasions: settings.occasions, localities: settings.localities,
+      occasions: settings.occasions, events: settings.events, localities: settings.localities,
     })
       .then(() => showToast("Update ho gaya ✓"))
       .catch(err => showToast("Error: " + err.message));
@@ -694,6 +723,22 @@
   function removeOccasion(key){
     if(settings.occasions.length <= 1){ showToast("Kam se kam ek occasion rehni chahiye"); return; }
     settings.occasions = settings.occasions.filter(o => o.key !== key);
+    saveCatalog();
+  }
+
+  function addEvent(){
+    const input = document.getElementById("newEventInput");
+    const label = input.value.trim();
+    if(!label){ showToast("Occasion ka naam likho"); return; }
+    const key = slugify(label);
+    if(settings.events.some(e => e.key === key)){ showToast("Ye occasion pehle se hai"); return; }
+    settings.events.push({ key, label, icon: "fa-star" });
+    saveCatalog();
+  }
+
+  function removeEvent(key){
+    if(settings.events.length <= 1){ showToast("Kam se kam ek occasion rehni chahiye"); return; }
+    settings.events = settings.events.filter(e => e.key !== key);
     saveCatalog();
   }
 

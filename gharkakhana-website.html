@@ -495,7 +495,7 @@
           <div class="sub">Har occasion ke hisaab se order</div>
         </div>
       </div>
-      <div class="chips">
+      <div class="chips" id="eventChips">
         <div class="occ-chip occ-1"><i class="fa-solid fa-ring"></i> Mangni</div>
         <div class="occ-chip occ-2"><i class="fa-solid fa-cake-candles"></i> Birthday Party</div>
         <div class="occ-chip occ-3"><i class="fa-solid fa-mosque"></i> Ziyarat</div>
@@ -514,7 +514,7 @@
           <div class="sub">Sirf aas paas ke cooks dikhenge</div>
         </div>
       </div>
-      <div class="chips">
+      <div class="chips" id="localityChips">
         <div class="chip active">Shah-e-Alam</div>
         <div class="chip">Gomtipur</div>
         <div class="chip">Bapunagar</div>
@@ -740,8 +740,27 @@
       { key: "dinner", label: "Dinner", icon: "fa-moon", cutoffTime: "18:00" },
       { key: "urgent", label: "Urgent", icon: "fa-bolt", cutoffTime: "" },
     ];
-    const DEFAULT_LOCALITIES = [{ key: "shah_e_alam", label: "Shah-e-Alam" }];
+    const DEFAULT_EVENTS = [
+      { key: "mangni", label: "Mangni", icon: "fa-ring" },
+      { key: "birthday_party", label: "Birthday Party", icon: "fa-cake-candles" },
+      { key: "ziyarat", label: "Ziyarat", icon: "fa-mosque" },
+      { key: "niyaz", label: "Niyaz", icon: "fa-hands-praying" },
+      { key: "farmhouse_delivery", label: "Farmhouse Delivery", icon: "fa-tree" },
+      { key: "yaad", label: "Yaad", icon: "fa-dove" },
+    ];
+    const DEFAULT_LOCALITIES = [
+      { key: "shah_e_alam", label: "Shah-e-Alam" },
+      { key: "gomtipur", label: "Gomtipur" },
+      { key: "bapunagar", label: "Bapunagar" },
+      { key: "juhapura", label: "Juhapura" },
+      { key: "jamalpur", label: "Jamalpur" },
+      { key: "kalupur", label: "Kalupur" },
+      { key: "dariyapur", label: "Dariyapur" },
+      { key: "shahpur", label: "Shahpur" },
+      { key: "vatva", label: "Vatva" },
+    ];
     let siteOccasions = DEFAULT_OCCASIONS;
+    let siteEvents = DEFAULT_EVENTS;
     let siteLocalities = DEFAULT_LOCALITIES;
     let siteContent = { about: "", privacy: "", contact: "" };
     // Category chips are admin-managed (Settings tab) — new categories the admin
@@ -761,6 +780,26 @@
           <span>${c.label}</span>
         </div>`).join("")}
       `;
+    }
+
+    // "Kis mauke ke liye" homepage chips — admin-managed (Settings tab)
+    function renderEventChips(events){
+      const container = document.getElementById("eventChips");
+      if(!container) return;
+      container.innerHTML = events.map((e, i) => `
+        <div class="occ-chip occ-${(i % 6) + 1}"><i class="fa-solid ${e.icon || 'fa-star'}"></i> ${e.label}</div>
+      `).join("");
+    }
+
+    // "Apni locality chuno" homepage chips — admin-managed; tapping one also
+    // updates the header/footer locality (same as openLocalityPicker).
+    function renderLocalityChips(localities){
+      const container = document.getElementById("localityChips");
+      if(!container) return;
+      const current = localStorage.getItem("gkk_locality") || localities[0].label;
+      container.innerHTML = localities.map(l => `
+        <div class="chip ${l.label === current ? 'active' : ''}" onclick="selectLocality('${l.label.replace(/'/g, "\\'")}')">${l.label}</div>
+      `).join("");
     }
     function firstQtyValue(unit){
       if(unit === "kg") return 1;
@@ -905,6 +944,8 @@
         const categories = (d.categories && d.categories.length) ? d.categories : DEFAULT_CATEGORIES;
         renderCategoryChips(categories);
         siteOccasions = (d.occasions && d.occasions.length) ? d.occasions : DEFAULT_OCCASIONS;
+        siteEvents = (d.events && d.events.length) ? d.events : DEFAULT_EVENTS;
+        renderEventChips(siteEvents);
         siteLocalities = (d.localities && d.localities.length) ? d.localities : DEFAULT_LOCALITIES;
         initLocalityDisplay();
       }, err => console.error("Catalog load failed:", err));
@@ -915,6 +956,7 @@
       renderMenuList(LOCAL_MENU_SEED);
       renderCookAccordion(LOCAL_MENU_SEED);
       renderCategoryChips(DEFAULT_CATEGORIES);
+      renderEventChips(DEFAULT_EVENTS);
       initLocalityDisplay();
     }
 
@@ -1640,6 +1682,7 @@
       const footText = document.getElementById("localityFootText");
       if(chipText) chipText.textContent = current;
       if(footText) footText.textContent = current;
+      renderLocalityChips(siteLocalities);
     }
 
     function openLocalityPicker(){
