@@ -17,6 +17,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <!-- Firebase (Firestore) -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
@@ -421,10 +422,11 @@
     <div class="wrap">
       <div class="brand"><i class="fa-solid fa-bowl-food"></i> GharKaKhana</div>
       <div style="display:flex; align-items:center; gap:14px;">
-        <div class="loc"><i class="fa-solid fa-location-dot"></i> Shah-e-Alam</div>
+        <div class="loc" id="localityChip" onclick="openLocalityPicker()" style="cursor:pointer;"><i class="fa-solid fa-location-dot"></i> <span id="localityChipText">Shah-e-Alam</span> <i class="fa-solid fa-chevron-down" style="font-size:8px; margin-left:2px;"></i></div>
         <div id="installBtn" onclick="installApp()" style="display:none; align-items:center; gap:5px; cursor:pointer; font-size:11px; font-weight:600; color:var(--turmeric); border:1px solid #5A4632; padding:5px 10px; border-radius:999px;">
           <i class="fa-solid fa-download"></i> Install
         </div>
+        <i class="fa-solid fa-qrcode" onclick="showAppQR()" style="cursor:pointer; font-size:15px;"></i>
         <i class="fa-solid fa-user" id="profileIcon" onclick="openProfile()" style="cursor:pointer; font-size:15px;"></i>
       </div>
     </div>
@@ -649,11 +651,14 @@
       <div class="brand" style="font-family:'Fraunces',serif; font-weight:700; font-size:17px; display:flex; align-items:center; gap:6px;">
         <i class="fa-solid fa-bowl-food" style="color:var(--turmeric);"></i> GharKaKhana
       </div>
-      <p>Ghar ke cooks se, seedha aapki thali tak. Shah-e-Alam, Gomtipur, Bapunagar, Juhapura, Jamalpur, Kalupur.</p>
+      <p>Ghar ke cooks se, seedha aapki thali tak.</p>
+      <div class="loc" onclick="openLocalityPicker()" style="cursor:pointer; display:inline-flex; margin:10px 0;">
+        <i class="fa-solid fa-location-dot"></i> <span id="localityFootText">Shah-e-Alam</span> <i class="fa-solid fa-chevron-down" style="font-size:8px; margin-left:2px;"></i>
+      </div>
       <div class="foot-links">
-        <a href="#">Humare baare mein</a>
-        <a href="#">Privacy Policy</a>
-        <a href="#">Contact</a>
+        <a href="javascript:void(0)" onclick="showContentModal('about')">Humare baare mein</a>
+        <a href="javascript:void(0)" onclick="showContentModal('privacy')">Privacy Policy</a>
+        <a href="javascript:void(0)" onclick="showContentModal('contact')">Contact</a>
       </div>
       <div class="foot-social">
         <i class="fa-brands fa-whatsapp"></i>
@@ -730,6 +735,15 @@
       { key: "chai", label: "Chai" },
       { key: "mithai", label: "Mithai" },
     ];
+    const DEFAULT_OCCASIONS = [
+      { key: "lunch", label: "Lunch", icon: "fa-sun", cutoffTime: "10:00" },
+      { key: "dinner", label: "Dinner", icon: "fa-moon", cutoffTime: "18:00" },
+      { key: "urgent", label: "Urgent", icon: "fa-bolt", cutoffTime: "" },
+    ];
+    const DEFAULT_LOCALITIES = [{ key: "shah_e_alam", label: "Shah-e-Alam" }];
+    let siteOccasions = DEFAULT_OCCASIONS;
+    let siteLocalities = DEFAULT_LOCALITIES;
+    let siteContent = { about: "", privacy: "", contact: "" };
     // Category chips are admin-managed (Settings tab) — new categories the admin
     // adds show up here automatically, with a generic icon if none is mapped above.
     function renderCategoryChips(categories){
@@ -887,13 +901,21 @@
         paymentQrUrl = doc.exists ? (doc.data().qrUrl || "") : "";
       }, err => console.error("Settings load failed:", err));
       db.collection("settings").doc("catalog").onSnapshot(doc => {
-        const categories = (doc.exists && doc.data().categories && doc.data().categories.length) ? doc.data().categories : DEFAULT_CATEGORIES;
+        const d = doc.exists ? doc.data() : {};
+        const categories = (d.categories && d.categories.length) ? d.categories : DEFAULT_CATEGORIES;
         renderCategoryChips(categories);
+        siteOccasions = (d.occasions && d.occasions.length) ? d.occasions : DEFAULT_OCCASIONS;
+        siteLocalities = (d.localities && d.localities.length) ? d.localities : DEFAULT_LOCALITIES;
+        initLocalityDisplay();
       }, err => console.error("Catalog load failed:", err));
+      db.collection("settings").doc("content").onSnapshot(doc => {
+        siteContent = doc.exists ? { about: "", privacy: "", contact: "", ...doc.data() } : { about: "", privacy: "", contact: "" };
+      }, err => console.error("Content load failed:", err));
     } else {
       renderMenuList(LOCAL_MENU_SEED);
       renderCookAccordion(LOCAL_MENU_SEED);
       renderCategoryChips(DEFAULT_CATEGORIES);
+      initLocalityDisplay();
     }
 
     function setOrderMode(btnEl, mode){
@@ -1102,7 +1124,9 @@
       renderMealTimeStep();
     }
 
-    // Order cutoffs (same-day only): Lunch by 10:00 AM, Dinner by 6:00 PM. Future dates skip cutoff — advance/event orders.
+    // Cutoff logic is generic now: each occasion (admin-managed, Settings tab) can
+    // have its own cutoffTime ("HH:MM") or none (treated like the old "Urgent" —
+    // always available, no same-day cutoff).
     function renderMealTimeStep(){
       const modal = document.getElementById("cartModal");
       modal.innerHTML = `
@@ -1112,9 +1136,7 @@
           <input type="date" id="f_orderdate" value="${orderDate}" min="${todayISO()}" onchange="setOrderDate(this.value)">
         </div>
         <div class="fulfil-toggle">
-          <div class="fulfil-option" id="opt-lunch" onclick="selectMealType('lunch')"><i class="fa-solid fa-sun"></i>Lunch</div>
-          <div class="fulfil-option" id="opt-dinner" onclick="selectMealType('dinner')"><i class="fa-solid fa-moon"></i>Dinner</div>
-          <div class="fulfil-option" id="opt-urgent" onclick="selectMealType('urgent')"><i class="fa-solid fa-bolt"></i>Urgent</div>
+          ${siteOccasions.map(o => `<div class="fulfil-option" id="opt-${o.key}" onclick="selectMealType('${o.key}')"><i class="fa-solid ${o.icon || 'fa-utensils'}"></i>${o.label}</div>`).join("")}
         </div>
         <div id="mealTimeNote" style="font-size:11.5px; color:var(--text-soft); margin-top:10px; line-height:1.5;"></div>
         <div class="modal-actions">
@@ -1130,41 +1152,38 @@
       if(mealType) selectMealType(mealType);
     }
 
-    function selectMealType(type){
-      mealType = type;
-      ["lunch", "dinner", "urgent"].forEach(t => document.getElementById(`opt-${t}`).classList.toggle("selected", t === type));
+    function selectMealType(key){
+      mealType = key;
+      siteOccasions.forEach(o => document.getElementById(`opt-${o.key}`)?.classList.toggle("selected", o.key === key));
+      const occasion = siteOccasions.find(o => o.key === key);
       const note = document.getElementById("mealTimeNote");
       const now = new Date();
       const hourFloat = now.getHours() + now.getMinutes() / 60;
       const isToday = orderDate === todayISO();
       const dateLabel = isToday ? "aaj" : new Date(orderDate + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" });
 
-      if(type === "lunch"){
-        if(!isToday){
-          note.innerHTML = `<i class="fa-solid fa-circle-check" style="color:var(--sage);"></i> ${dateLabel} ke Lunch ke liye advance order — cutoff abhi apply nahi hota, cook ke paas time hai taiyari ka.`;
-        } else {
-          note.innerHTML = hourFloat < 10
-            ? `<i class="fa-solid fa-circle-check" style="color:var(--sage);"></i> Lunch order subah <b>10:00 baje tak</b> liye jaate hain — aapka order time mein hai.`
-            : `<i class="fa-solid fa-triangle-exclamation" style="color:var(--chili);"></i> Aaj ke lunch ka cutoff (10:00 AM) nikal gaya hai. Date badal ke kal ka lunch book karo, ya "Urgent" try karo.`;
-        }
-      } else if(type === "dinner"){
-        if(!isToday){
-          note.innerHTML = `<i class="fa-solid fa-circle-check" style="color:var(--sage);"></i> ${dateLabel} ke Dinner ke liye advance order — cutoff abhi apply nahi hota, cook ke paas time hai taiyari ka.`;
-        } else {
-          note.innerHTML = hourFloat < 18
-            ? `<i class="fa-solid fa-circle-check" style="color:var(--sage);"></i> Dinner order shaam <b>6:00 baje tak</b> liye jaate hain — aapka order time mein hai.`
-            : `<i class="fa-solid fa-triangle-exclamation" style="color:var(--chili);"></i> Aaj ke dinner ka cutoff (6:00 PM) nikal gaya hai. Date badal ke kal ka dinner book karo, ya "Urgent" try karo.`;
-        }
-      } else {
+      if(!occasion || !occasion.cutoffTime){
         note.innerHTML = isToday
-          ? `<i class="fa-solid fa-circle-info" style="color:var(--turmeric);"></i> Urgent order cook ki availability pe depend karta hai, thoda extra charge lag sakta hai. Cook approve karega tabhi confirm hoga.`
-          : `<i class="fa-solid fa-circle-info" style="color:var(--turmeric);"></i> Future date ke liye "Urgent" zaroori nahi — Lunch ya Dinner select karo, cutoff apply nahi hoga.`;
+          ? `<i class="fa-solid fa-circle-info" style="color:var(--turmeric);"></i> Ye order cook ki availability pe depend karta hai — cook approve karega tabhi confirm hoga.`
+          : `<i class="fa-solid fa-circle-info" style="color:var(--turmeric);"></i> Future date ke liye koi cutoff apply nahi hota.`;
+        return;
+      }
+      const [cutH, cutM] = occasion.cutoffTime.split(":").map(Number);
+      const cutoffFloat = cutH + cutM / 60;
+      const cutoffLabel = new Date(2000, 0, 1, cutH, cutM).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", hour12: true });
+
+      if(!isToday){
+        note.innerHTML = `<i class="fa-solid fa-circle-check" style="color:var(--sage);"></i> ${dateLabel} ke ${occasion.label} ke liye advance order — cutoff abhi apply nahi hota, cook ke paas time hai taiyari ka.`;
+      } else {
+        note.innerHTML = hourFloat < cutoffFloat
+          ? `<i class="fa-solid fa-circle-check" style="color:var(--sage);"></i> ${occasion.label} order <b>${cutoffLabel} tak</b> liye jaate hain — aapka order time mein hai.`
+          : `<i class="fa-solid fa-triangle-exclamation" style="color:var(--chili);"></i> Aaj ke ${occasion.label} ka cutoff (${cutoffLabel}) nikal gaya hai. Date badal ke aage ka book karo, ya doosra option try karo.`;
       }
     }
 
     function goToPayment(){
       if(!mealType){
-        showToast("Lunch, Dinner ya Urgent chuno");
+        showToast("Pehle koi occasion chuno");
         return;
       }
       renderPaymentStep();
@@ -1191,7 +1210,7 @@
     function confirmPaymentDone(){
       const modal = document.getElementById("cartModal");
       const orderId = "GK" + Math.floor(1000 + Math.random() * 9000);
-      const mealLabel = mealType === "lunch" ? "Lunch" : mealType === "dinner" ? "Dinner" : "Urgent";
+      const mealLabel = (siteOccasions.find(o => o.key === mealType) || {}).label || mealType;
       const isToday = orderDate === todayISO();
       const dateLabel = isToday ? "Aaj" : new Date(orderDate + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 
@@ -1609,6 +1628,67 @@
     }
     function isStandalone(){
       return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+    }
+
+    // ---------- Share / QR (poster/table-card friendly — scan to open the site) ----------
+    // ---------- Locality (admin-managed list; shown in header + footer) ----------
+    function initLocalityDisplay(){
+      const saved = localStorage.getItem("gkk_locality");
+      const match = siteLocalities.find(l => l.label === saved);
+      const current = match ? match.label : siteLocalities[0].label;
+      const chipText = document.getElementById("localityChipText");
+      const footText = document.getElementById("localityFootText");
+      if(chipText) chipText.textContent = current;
+      if(footText) footText.textContent = current;
+    }
+
+    function openLocalityPicker(){
+      const modal = document.getElementById("profileModal");
+      modal.innerHTML = `
+        <h3>Apna Area Chuno</h3>
+        <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:14px;">
+          ${siteLocalities.map(l => `
+            <div style="border:1px solid var(--tan); border-radius:12px; padding:11px 14px; cursor:pointer; font-size:13px; font-weight:600;" onclick="selectLocality('${l.label.replace(/'/g, "\\'")}')">
+              <i class="fa-solid fa-location-dot" style="color:var(--chili); margin-right:8px;"></i>${l.label}
+            </div>
+          `).join("")}
+        </div>
+        <div class="modal-actions"><button class="btn btn-ghost" style="flex:1;" onclick="closeProfile()">Band karo</button></div>
+      `;
+      document.getElementById("profileOverlay").classList.add("open");
+    }
+
+    function selectLocality(label){
+      localStorage.setItem("gkk_locality", label);
+      initLocalityDisplay();
+      closeProfile();
+      showToast(`${label} select ho gaya`);
+    }
+
+    // ---------- Footer content (admin-managed: About / Privacy / Contact) ----------
+    const CONTENT_TITLES = { about: "Humare Baare Mein", privacy: "Privacy Policy", contact: "Contact Karo" };
+    function showContentModal(key){
+      const modal = document.getElementById("profileModal");
+      const text = (siteContent[key] || "").trim();
+      modal.innerHTML = `
+        <h3>${CONTENT_TITLES[key]}</h3>
+        <p style="font-size:12.5px; color:var(--text-soft); line-height:1.7; margin-bottom:14px; white-space:pre-wrap;">${text || "Abhi ye jaankari add nahi hui hai."}</p>
+        <div class="modal-actions"><button class="btn btn-ghost" style="flex:1;" onclick="closeProfile()">Band karo</button></div>
+      `;
+      document.getElementById("profileOverlay").classList.add("open");
+    }
+
+    function showAppQR(){
+      const url = window.location.href.split("?")[0];
+      const modal = document.getElementById("profileModal");
+      modal.innerHTML = `
+        <h3>GharKaKhana — Scan karo</h3>
+        <div id="qrCanvasBox" style="display:flex; justify-content:center; margin:14px 0;"></div>
+        <p style="font-size:11px; color:var(--text-soft); word-break:break-all; text-align:center; margin-bottom:14px;">${url}</p>
+        <div class="modal-actions"><button class="btn btn-primary" style="flex:1;" onclick="closeProfile()">Band karo</button></div>
+      `;
+      new QRCode(document.getElementById("qrCanvasBox"), { text: url, width: 180, height: 180, colorDark: "#2B1B17", colorLight: "#FBF3E7" });
+      document.getElementById("profileOverlay").classList.add("open");
     }
 
     async function installApp(){

@@ -5,8 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#2B1B17">
 <title>GharKaKhana — Admin Panel</title>
+
+<!-- PWA: makes "Add to Home Screen" work -->
+<link rel="manifest" href="manifest-admin.json">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="GKK Admin">
+<link rel="apple-touch-icon" href="icon-192-admin.png">
+
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <!-- Firebase (Firestore) -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
@@ -88,9 +98,9 @@
   .modal h3{font-size:16px; margin-bottom:14px;}
   .field{margin-bottom:12px;}
   .field label{font-size:11px; font-weight:600; color:var(--text-muted); display:block; margin-bottom:5px;}
-  .field input, .field select{
+  .field input, .field select, .field textarea{
     width:100%; padding:11px 12px; border-radius:10px; border:1px solid var(--tan);
-    font-size:13px; font-family:'Inter',sans-serif; background:white; color:var(--charcoal);
+    font-size:13px; font-family:'Inter',sans-serif; background:white; color:var(--charcoal); resize:vertical;
   }
   .modal-actions{display:flex; gap:10px; margin-top:16px;}
   .modal-actions .btn{flex:1;}
@@ -152,12 +162,21 @@
       <div class="brand"><i class="fa-solid fa-bowl-food"></i> GharKaKhana</div>
       <div class="subtitle">Admin Panel</div>
     </div>
-    <i class="fa-solid fa-user-shield" style="color:#C9B79C; font-size:18px;"></i>
+    <div style="display:flex; align-items:center; gap:12px;">
+      <div id="installBtn" onclick="installApp()" style="display:none; align-items:center; gap:5px; cursor:pointer; font-size:10.5px; font-weight:700; color:var(--turmeric); border:1px solid #5A4632; padding:5px 9px; border-radius:999px;">
+        <i class="fa-solid fa-download"></i> Install
+      </div>
+      <i class="fa-solid fa-user-shield" style="color:#C9B79C; font-size:18px;"></i>
+    </div>
   </div>
 </div>
 
 <div id="configBanner" style="display:none; background:#F6E2DC; color:var(--chili); font-size:11.5px; font-weight:600; text-align:center; padding:9px 16px;">
   ⚠️ Firebase config nahi bhara — abhi local demo mode mein hai (changes save nahi honge, refresh pe reset ho jayenge).
+</div>
+
+<div class="overlay" id="qrOverlay">
+  <div class="modal" id="qrModal"></div>
 </div>
 
 <div class="tabs">
@@ -313,6 +332,15 @@
       { key: "cup", label: "Per cup" },
       { key: "box", label: "Per box (4 person)" },
     ],
+    occasions: [
+      { key: "lunch", label: "Lunch", icon: "fa-sun", cutoffTime: "10:00" },
+      { key: "dinner", label: "Dinner", icon: "fa-moon", cutoffTime: "18:00" },
+      { key: "urgent", label: "Urgent", icon: "fa-bolt", cutoffTime: "" },
+    ],
+    localities: [
+      { key: "shah_e_alam", label: "Shah-e-Alam" },
+    ],
+    content: { about: "", privacy: "", contact: "" },
   };
   let currentTab = "cooks";
   let editingId = null;
@@ -365,9 +393,15 @@
         if(currentTab === collectionName) render();
       }, err => showFirestoreError(err));
     });
+    let ordersLoadedOnce = false;
     db.collection("orders").onSnapshot(snapshot => {
+      if(ordersLoadedOnce){
+        const newPending = snapshot.docChanges().some(c => c.type === "added" && c.doc.data().status === "Pending");
+        if(newPending) playAlertSound();
+      }
       data.orders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       if(currentTab === "orders"){ renderCalendar(); renderOrdersList(); }
+      ordersLoadedOnce = true;
     }, err => showFirestoreError(err));
     db.collection("settings").doc("payment").onSnapshot(doc => {
       settings.qrUrl = doc.exists ? (doc.data().qrUrl || "") : "";
@@ -378,10 +412,19 @@
         const d = doc.data();
         if(d.categories && d.categories.length) settings.categories = d.categories;
         if(d.units && d.units.length) settings.units = d.units;
+        if(d.occasions && d.occasions.length) settings.occasions = d.occasions;
+        if(d.localities && d.localities.length) settings.localities = d.localities;
       } else {
-        // First run — seed the catalog doc with the default categories/units above.
-        db.collection("settings").doc("catalog").set({ categories: settings.categories, units: settings.units }).catch(()=>{});
+        // First run — seed the catalog doc with the defaults above.
+        db.collection("settings").doc("catalog").set({
+          categories: settings.categories, units: settings.units,
+          occasions: settings.occasions, localities: settings.localities,
+        }).catch(()=>{});
       }
+      if(currentTab === "settings") renderSettings();
+    }, err => showFirestoreError(err));
+    db.collection("settings").doc("content").onSnapshot(doc => {
+      if(doc.exists) settings.content = { about: "", privacy: "", contact: "", ...doc.data() };
       if(currentTab === "settings") renderSettings();
     }, err => showFirestoreError(err));
   }
@@ -546,6 +589,60 @@
           <button class="btn btn-ghost btn-sm" onclick="addUnit()"><i class="fa-solid fa-plus"></i>Add</button>
         </div>
       </div>
+
+      <div class="settings-card">
+        <h3><i class="fa-solid fa-calendar-day"></i> Occasions (Lunch/Dinner/Urgent waghera)</h3>
+        <p>Ye customer ko order karte waqt dikhenge. Cutoff time set karo (jaise Lunch 10:00 AM tak) — khaali chodo to koi cutoff nahi lagega (Urgent jaisa).</p>
+        <div class="chip-list">
+          ${settings.occasions.map(o => `<div class="chip">${o.label}${o.cutoffTime ? ` (${o.cutoffTime})` : ""}<i class="fa-solid fa-xmark" onclick="removeOccasion('${o.key}')"></i></div>`).join("")}
+        </div>
+        <div class="chip-add-row">
+          <input type="text" id="newOccasionInput" placeholder="e.g. Breakfast" style="flex:1.4;">
+          <input type="time" id="newOccasionCutoff" style="width:110px; padding:9px 8px; border-radius:10px; border:1px solid var(--tan); font-size:12px;">
+          <button class="btn btn-ghost btn-sm" onclick="addOccasion()"><i class="fa-solid fa-plus"></i>Add</button>
+        </div>
+      </div>
+
+      <div class="settings-card">
+        <h3><i class="fa-solid fa-location-dot"></i> Localities</h3>
+        <p>Ye areas customer ko delivery location chunne ke liye dikhenge (website header aur footer dono jagah).</p>
+        <div class="chip-list">
+          ${settings.localities.map(l => `<div class="chip">${l.label}<i class="fa-solid fa-xmark" onclick="removeLocality('${l.key}')"></i></div>`).join("")}
+        </div>
+        <div class="chip-add-row">
+          <input type="text" id="newLocalityInput" placeholder="e.g. Kankaria">
+          <button class="btn btn-ghost btn-sm" onclick="addLocality()"><i class="fa-solid fa-plus"></i>Add</button>
+        </div>
+      </div>
+
+      <div class="settings-card">
+        <h3><i class="fa-solid fa-file-lines"></i> Website Footer (Hamare Baare Mein, Privacy, Contact)</h3>
+        <p>Ye text customer website ke footer mein dikhega.</p>
+        <div class="field">
+          <label>Hamare Baare Mein</label>
+          <textarea id="c_about" rows="3" placeholder="GharKaKhana ke baare mein likho...">${settings.content.about}</textarea>
+        </div>
+        <div class="field">
+          <label>Privacy Policy</label>
+          <textarea id="c_privacy" rows="3" placeholder="Privacy policy likho...">${settings.content.privacy}</textarea>
+        </div>
+        <div class="field">
+          <label>Contact</label>
+          <textarea id="c_contact" rows="3" placeholder="e.g. Phone: 98765 43210, Email: ...">${settings.content.contact}</textarea>
+        </div>
+        <div class="modal-actions" style="margin-top:0;">
+          <button class="btn btn-primary" style="flex:1;" onclick="saveContent()"><i class="fa-solid fa-floppy-disk"></i>Footer Save Karo</button>
+        </div>
+      </div>
+
+      <div class="settings-card">
+        <h3><i class="fa-solid fa-share-nodes"></i> Share / App Install Links</h3>
+        <p>Customer aur cook ko ye link scan karke seedha website/app khol sakte ho — "Install" bhi kar sakte hain.</p>
+        <div class="modal-actions" style="margin-top:0; flex-wrap:wrap;">
+          <button class="btn btn-ghost btn-sm" onclick="showAppQR('gharkakhana-website.html', 'Customer Website')"><i class="fa-solid fa-qrcode"></i> Website QR</button>
+          <button class="btn btn-ghost btn-sm" onclick="showAppQR('gharkakhana-cook.html', 'Cook Panel')"><i class="fa-solid fa-qrcode"></i> Cook Panel QR</button>
+        </div>
+      </div>
     `;
   }
 
@@ -559,7 +656,10 @@
       renderSettings();
       return;
     }
-    db.collection("settings").doc("catalog").set({ categories: settings.categories, units: settings.units })
+    db.collection("settings").doc("catalog").set({
+      categories: settings.categories, units: settings.units,
+      occasions: settings.occasions, localities: settings.localities,
+    })
       .then(() => showToast("Update ho gaya ✓"))
       .catch(err => showToast("Error: " + err.message));
     renderSettings();
@@ -579,6 +679,53 @@
     if(settings.categories.length <= 1){ showToast("Kam se kam ek category rehni chahiye"); return; }
     settings.categories = settings.categories.filter(c => c.key !== key);
     saveCatalog();
+  }
+
+  function addOccasion(){
+    const label = document.getElementById("newOccasionInput").value.trim();
+    const cutoffTime = document.getElementById("newOccasionCutoff").value;
+    if(!label){ showToast("Occasion ka naam likho"); return; }
+    const key = slugify(label);
+    if(settings.occasions.some(o => o.key === key)){ showToast("Ye occasion pehle se hai"); return; }
+    settings.occasions.push({ key, label, icon: "fa-utensils", cutoffTime: cutoffTime || "" });
+    saveCatalog();
+  }
+
+  function removeOccasion(key){
+    if(settings.occasions.length <= 1){ showToast("Kam se kam ek occasion rehni chahiye"); return; }
+    settings.occasions = settings.occasions.filter(o => o.key !== key);
+    saveCatalog();
+  }
+
+  function addLocality(){
+    const input = document.getElementById("newLocalityInput");
+    const label = input.value.trim();
+    if(!label){ showToast("Locality ka naam likho"); return; }
+    const key = slugify(label);
+    if(settings.localities.some(l => l.key === key)){ showToast("Ye locality pehle se hai"); return; }
+    settings.localities.push({ key, label });
+    saveCatalog();
+  }
+
+  function removeLocality(key){
+    if(settings.localities.length <= 1){ showToast("Kam se kam ek locality rehni chahiye"); return; }
+    settings.localities = settings.localities.filter(l => l.key !== key);
+    saveCatalog();
+  }
+
+  function saveContent(){
+    settings.content = {
+      about: document.getElementById("c_about").value.trim(),
+      privacy: document.getElementById("c_privacy").value.trim(),
+      contact: document.getElementById("c_contact").value.trim(),
+    };
+    if(!window.FIREBASE_CONFIGURED){
+      showToast("Save ho gaya (local demo, save nahi hoga)");
+      return;
+    }
+    db.collection("settings").doc("content").set(settings.content)
+      .then(() => showToast("Footer content save ho gaya ✓"))
+      .catch(err => showToast("Error: " + err.message));
   }
 
   function addUnit(){
@@ -742,7 +889,7 @@
           <div class="info">
             <div class="order-item">${o.item}${o.meal === "Urgent" ? '<span class="urgent-tag">URGENT</span>' : ""}</div>
             <div class="order-meta">${o.customer} • ${o.cook} • ${o.area}</div>
-            <div class="order-meta"><i class="fa-solid ${o.type === "Pickup" ? "fa-store" : "fa-motorcycle"}"></i> ${o.type} • <i class="fa-solid ${o.meal === "Lunch" ? "fa-sun" : o.meal === "Dinner" ? "fa-moon" : "fa-bolt"}"></i> ${o.meal} • #${o.id}</div>
+            <div class="order-meta"><i class="fa-solid ${o.type === "Pickup" ? "fa-store" : "fa-motorcycle"}"></i> ${o.type} • <i class="fa-solid ${o.meal === "Lunch" ? "fa-sun" : o.meal === "Dinner" ? "fa-moon" : o.meal === "Urgent" ? "fa-bolt" : "fa-utensils"}"></i> ${o.meal} • #${o.id}</div>
             ${o.orderGroupId ? `<div class="order-meta" style="color:var(--turmeric);"><i class="fa-solid fa-layer-group"></i> Apna Thaal combo — group #${o.orderGroupId} (alag cooks ke liye alag ticket)</div>` : ""}
           </div>
           <span class="badge ${o.status === "Pending" ? "inactive" : o.status === "Declined" ? "inactive" : "active"}">${o.status}</span>
@@ -993,6 +1140,81 @@
     db.collection(currentTab).doc(id).delete()
       .then(() => showToast("Delete ho gaya"))
       .catch(err => showToast("Error: " + err.message));
+  }
+
+  // Dependency-free alert beep — plays when a new order comes in, while this tab
+  // is open. No push-notification infra (service worker / paid plan) needed.
+  function playAlertSound(){
+    try{
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
+      o.type = "sine"; o.frequency.value = 880;
+      g.gain.setValueAtTime(0.001, ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.2, ctx.currentTime + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+      o.start(); o.stop(ctx.currentTime + 0.35);
+    } catch(e){ /* audio not available — ignore */ }
+  }
+
+  // ---------- Share / QR ----------
+  function showAppQR(path, title){
+    const url = new URL(path, window.location.href).href;
+    const modal = document.getElementById("qrModal");
+    modal.innerHTML = `
+      <h3>${title}</h3>
+      <div id="qrCanvasBox" style="display:flex; justify-content:center; margin:14px 0;"></div>
+      <p style="font-size:11px; color:var(--text-soft); word-break:break-all; text-align:center; margin-bottom:14px;">${url}</p>
+      <div class="modal-actions"><button class="btn btn-primary" style="flex:1;" onclick="document.getElementById('qrOverlay').classList.remove('open')">Band karo</button></div>
+    `;
+    new QRCode(document.getElementById("qrCanvasBox"), { text: url, width: 180, height: 180, colorDark: "#2B1B17", colorLight: "#FBF3E7" });
+    document.getElementById("qrOverlay").classList.add("open");
+  }
+
+  // ---------- "Install App" (Add to Home Screen) ----------
+  let deferredInstallPrompt = null;
+  window.addEventListener("beforeinstallprompt", e => {
+    e.preventDefault();
+    deferredInstallPrompt = e;
+    document.getElementById("installBtn").style.display = "flex";
+  });
+  window.addEventListener("appinstalled", () => {
+    document.getElementById("installBtn").style.display = "none";
+    deferredInstallPrompt = null;
+  });
+  function isIOS(){ return /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream; }
+  function isStandalone(){ return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true; }
+
+  async function installApp(){
+    if(deferredInstallPrompt){
+      deferredInstallPrompt.prompt();
+      await deferredInstallPrompt.userChoice;
+      deferredInstallPrompt = null;
+      document.getElementById("installBtn").style.display = "none";
+      return;
+    }
+    if(isIOS()){
+      const modal = document.getElementById("qrModal");
+      modal.innerHTML = `
+        <h3>App Install Karo</h3>
+        <p style="font-size:12.5px; color:var(--text-soft); line-height:1.7; margin-bottom:14px;">
+          1. Neeche <i class="fa-solid fa-arrow-up-from-bracket"></i> <b>Share</b> button dabao<br>
+          2. <b>"Add to Home Screen"</b> chuno<br>
+          3. <b>"Add"</b> dabao
+        </p>
+        <div class="modal-actions"><button class="btn btn-primary" style="flex:1;" onclick="document.getElementById('qrOverlay').classList.remove('open')">Theek hai</button></div>
+      `;
+      document.getElementById("qrOverlay").classList.add("open");
+    } else {
+      showToast("Browser ke 3-dot menu mein 'Add to Home Screen' try karo");
+    }
+  }
+  if(isStandalone()){ /* already installed — leave install button hidden */ }
+  else if(isIOS()){ document.getElementById("installBtn").style.display = "flex"; }
+
+  if("serviceWorker" in navigator){
+    window.addEventListener("load", () => navigator.serviceWorker.register("sw-admin.js").catch(() => {}));
   }
 
   function showToast(msg){
