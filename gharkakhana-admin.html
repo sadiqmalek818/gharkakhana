@@ -356,6 +356,10 @@
       { key: "shahpur", label: "Shahpur" },
       { key: "vatva", label: "Vatva" },
     ],
+    offers: [
+      { key: "pehle20", label: "Pehle order pe 20% OFF", sub: "Naye customers ke liye — code: GHAR20", kind: "discount", discountType: "percent", discountValue: 20, code: "GHAR20", firstOrderOnly: true, active: true },
+      { key: "bulk", label: "Bulk order? Extra discount", sub: "Mangni, party, niyaz ke liye poocho", kind: "info", discountType: "percent", discountValue: 0, code: "", firstOrderOnly: false, active: true },
+    ],
     content: { about: "", privacy: "", contact: "" },
   };
   let currentTab = "cooks";
@@ -431,11 +435,13 @@
         if(d.occasions && d.occasions.length) settings.occasions = d.occasions;
         if(d.events && d.events.length) settings.events = d.events;
         if(d.localities && d.localities.length) settings.localities = d.localities;
+        if(d.offers && d.offers.length) settings.offers = d.offers;
       } else {
         // First run — seed the catalog doc with the defaults above.
         db.collection("settings").doc("catalog").set({
           categories: settings.categories, units: settings.units,
-          occasions: settings.occasions, events: settings.events, localities: settings.localities,
+          occasions: settings.occasions, events: settings.events,
+          localities: settings.localities, offers: settings.offers,
         }).catch(()=>{});
       }
       if(currentTab === "settings") renderSettings();
@@ -645,6 +651,33 @@
       </div>
 
       <div class="settings-card">
+        <h3><i class="fa-solid fa-tags"></i> Offers &amp; Schemes</h3>
+        <p>Ye offers homepage pe banner ki tarah dikhenge, aur "Discount" type wale checkout/payment pe bhi apply honge (bill mein discount line dikhegi).</p>
+        <div id="offersList">
+          ${settings.offers.map(o => `
+            <div style="border:1px solid var(--tan); border-radius:12px; padding:10px 12px; margin-bottom:8px; ${o.active ? "" : "opacity:0.5;"}">
+              <div style="display:flex; justify-content:space-between; gap:8px;">
+                <div style="font-size:12.5px; font-weight:700;">${o.label}</div>
+                <span style="font-size:9.5px; font-weight:700; color:${o.kind === "discount" ? "var(--sage)" : "var(--turmeric)"};">${o.kind === "discount" ? (o.discountType === "percent" ? o.discountValue + "% OFF" : "₹" + o.discountValue + " OFF") : "INFO ONLY"}</span>
+              </div>
+              <div style="font-size:10.5px; color:var(--text-soft); margin-top:2px;">${o.sub || ""}</div>
+              <div style="font-size:9.5px; color:var(--text-soft); margin-top:4px;">
+                ${o.kind === "discount" ? (o.code ? `Code: ${o.code}` : "Auto-apply (no code)") : ""}
+                ${o.firstOrderOnly ? " • Sirf pehle order pe" : ""}
+                ${o.active ? "" : " • Inactive"}
+              </div>
+              <div style="display:flex; gap:8px; margin-top:8px;">
+                <button class="btn btn-ghost btn-sm" onclick="openOfferForm('${o.key}')"><i class="fa-solid fa-pen"></i>Edit</button>
+                <button class="btn btn-ghost btn-sm" onclick="deleteOffer('${o.key}')"><i class="fa-solid fa-trash"></i>Delete</button>
+              </div>
+            </div>
+          `).join("")}
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="openOfferForm()"><i class="fa-solid fa-plus"></i>Naya Offer Add Karo</button>
+        <div id="offerFormBox"></div>
+      </div>
+
+      <div class="settings-card">
         <h3><i class="fa-solid fa-file-lines"></i> Website Footer (Hamare Baare Mein, Privacy, Contact)</h3>
         <p>Ye text customer website ke footer mein dikhega.</p>
         <div class="field">
@@ -687,7 +720,8 @@
     }
     db.collection("settings").doc("catalog").set({
       categories: settings.categories, units: settings.units,
-      occasions: settings.occasions, events: settings.events, localities: settings.localities,
+      occasions: settings.occasions, events: settings.events,
+      localities: settings.localities, offers: settings.offers,
     })
       .then(() => showToast("Update ho gaya ✓"))
       .catch(err => showToast("Error: " + err.message));
@@ -755,6 +789,73 @@
   function removeLocality(key){
     if(settings.localities.length <= 1){ showToast("Kam se kam ek locality rehni chahiye"); return; }
     settings.localities = settings.localities.filter(l => l.key !== key);
+    saveCatalog();
+  }
+
+  function openOfferForm(key){
+    const offer = key ? settings.offers.find(o => o.key === key) : null;
+    const box = document.getElementById("offerFormBox");
+    box.innerHTML = `
+      <div style="border:1px dashed var(--tan); border-radius:12px; padding:12px; margin-top:10px;">
+        <input type="hidden" id="o_key" value="${offer ? offer.key : ""}">
+        <div class="field"><label>Banner Text</label><input type="text" id="o_label" value="${offer ? offer.label : ""}" placeholder="e.g. Pehle order pe 20% OFF"></div>
+        <div class="field"><label>Sub-text (chhota description)</label><input type="text" id="o_sub" value="${offer ? (offer.sub || "") : ""}" placeholder="e.g. Naye customers ke liye"></div>
+        <div class="field"><label>Type</label>
+          <select id="o_kind" onchange="toggleOfferDiscountFields()">
+            <option value="discount" ${offer && offer.kind === "discount" ? "selected" : ""}>Discount (checkout pe apply hoga)</option>
+            <option value="info" ${offer && offer.kind === "info" ? "selected" : ""}>Sirf Info Banner (koi discount nahi)</option>
+          </select>
+        </div>
+        <div id="offerDiscountFields">
+          <div class="field"><label>Discount Type</label>
+            <select id="o_discountType">
+              <option value="percent" ${offer && offer.discountType === "percent" ? "selected" : ""}>Percent (%)</option>
+              <option value="flat" ${offer && offer.discountType === "flat" ? "selected" : ""}>Flat (₹)</option>
+            </select>
+          </div>
+          <div class="field"><label>Value</label><input type="number" id="o_discountValue" value="${offer ? offer.discountValue : ""}" placeholder="e.g. 20"></div>
+          <div class="field"><label>Coupon Code (khaali chodo = auto-apply, code nahi chahiye)</label><input type="text" id="o_code" value="${offer ? (offer.code || "") : ""}" placeholder="e.g. GHAR20"></div>
+          <label style="display:flex; align-items:center; gap:8px; font-size:12px; margin-bottom:10px;"><input type="checkbox" id="o_firstOrderOnly" ${offer && offer.firstOrderOnly ? "checked" : ""}> Sirf customer ke pehle order pe lagu ho</label>
+        </div>
+        <label style="display:flex; align-items:center; gap:8px; font-size:12px; margin-bottom:10px;"><input type="checkbox" id="o_active" ${!offer || offer.active ? "checked" : ""}> Active (website pe dikhe)</label>
+        <div class="modal-actions" style="margin-top:0;">
+          <button class="btn btn-ghost" style="flex:1;" onclick="document.getElementById('offerFormBox').innerHTML=''">Cancel</button>
+          <button class="btn btn-primary" style="flex:1;" onclick="saveOffer()">Save Karo</button>
+        </div>
+      </div>
+    `;
+    toggleOfferDiscountFields();
+  }
+
+  function toggleOfferDiscountFields(){
+    const kind = document.getElementById("o_kind").value;
+    document.getElementById("offerDiscountFields").style.display = kind === "discount" ? "block" : "none";
+  }
+
+  function saveOffer(){
+    const label = document.getElementById("o_label").value.trim();
+    if(!label){ showToast("Banner text likho"); return; }
+    const existingKey = document.getElementById("o_key").value;
+    const kind = document.getElementById("o_kind").value;
+    const offer = {
+      key: existingKey || slugify(label),
+      label,
+      sub: document.getElementById("o_sub").value.trim(),
+      kind,
+      discountType: document.getElementById("o_discountType").value,
+      discountValue: kind === "discount" ? (parseFloat(document.getElementById("o_discountValue").value) || 0) : 0,
+      code: kind === "discount" ? document.getElementById("o_code").value.trim().toUpperCase() : "",
+      firstOrderOnly: kind === "discount" ? document.getElementById("o_firstOrderOnly").checked : false,
+      active: document.getElementById("o_active").checked,
+    };
+    const idx = settings.offers.findIndex(o => o.key === offer.key);
+    if(idx >= 0) settings.offers[idx] = offer; else settings.offers.push(offer);
+    document.getElementById("offerFormBox").innerHTML = "";
+    saveCatalog();
+  }
+
+  function deleteOffer(key){
+    settings.offers = settings.offers.filter(o => o.key !== key);
     saveCatalog();
   }
 
@@ -936,6 +1037,7 @@
             <div class="order-meta">${o.customer} • ${o.cook} • ${o.area}</div>
             <div class="order-meta"><i class="fa-solid ${o.type === "Pickup" ? "fa-store" : "fa-motorcycle"}"></i> ${o.type} • <i class="fa-solid ${o.meal === "Lunch" ? "fa-sun" : o.meal === "Dinner" ? "fa-moon" : o.meal === "Urgent" ? "fa-bolt" : "fa-utensils"}"></i> ${o.meal} • #${o.id}</div>
             ${o.orderGroupId ? `<div class="order-meta" style="color:var(--turmeric);"><i class="fa-solid fa-layer-group"></i> Apna Thaal combo — group #${o.orderGroupId} (alag cooks ke liye alag ticket)</div>` : ""}
+            ${o.discount > 0 ? `<div class="order-meta" style="color:var(--sage);"><i class="fa-solid fa-tag"></i> ${o.offerApplied || "Offer"} — -₹${o.discount} (₹${o.subtotal} → ₹${o.total})</div>` : ""}
           </div>
           <span class="badge ${o.status === "Pending" ? "inactive" : o.status === "Declined" ? "inactive" : "active"}">${o.status}</span>
         </div>

@@ -461,16 +461,12 @@
 
   <section style="padding-bottom:0;">
     <div class="wrap">
-      <div class="offers-scroll">
+      <div class="offers-scroll" id="offersScroll">
         <div class="offer-card o1">
           <div class="oc-title">Pehle order pe 20% OFF</div>
           <div class="oc-sub">Naye customers ke liye — code: GHAR20</div>
         </div>
         <div class="offer-card o2">
-          <div class="oc-title">40 km tak FREE delivery</div>
-          <div class="oc-sub">₹999 se upar ke order pe</div>
-        </div>
-        <div class="offer-card o3">
           <div class="oc-title">Bulk order? Extra discount</div>
           <div class="oc-sub">Mangni, party, niyaz ke liye poocho</div>
         </div>
@@ -759,9 +755,14 @@
       { key: "shahpur", label: "Shahpur" },
       { key: "vatva", label: "Vatva" },
     ];
+    const DEFAULT_OFFERS = [
+      { key: "pehle20", label: "Pehle order pe 20% OFF", sub: "Naye customers ke liye — code: GHAR20", kind: "discount", discountType: "percent", discountValue: 20, code: "GHAR20", firstOrderOnly: true, active: true },
+      { key: "bulk", label: "Bulk order? Extra discount", sub: "Mangni, party, niyaz ke liye poocho", kind: "info", discountType: "percent", discountValue: 0, code: "", firstOrderOnly: false, active: true },
+    ];
     let siteOccasions = DEFAULT_OCCASIONS;
     let siteEvents = DEFAULT_EVENTS;
     let siteLocalities = DEFAULT_LOCALITIES;
+    let siteOffers = DEFAULT_OFFERS;
     let siteContent = { about: "", privacy: "", contact: "" };
     // Category chips are admin-managed (Settings tab) — new categories the admin
     // adds show up here automatically, with a generic icon if none is mapped above.
@@ -799,6 +800,20 @@
       const current = localStorage.getItem("gkk_locality") || localities[0].label;
       container.innerHTML = localities.map(l => `
         <div class="chip ${l.label === current ? 'active' : ''}" onclick="selectLocality('${l.label.replace(/'/g, "\\'")}')">${l.label}</div>
+      `).join("");
+    }
+
+    // Homepage offer banners — admin-managed (Settings tab). Only active ones show.
+    function renderOffers(offers){
+      const container = document.getElementById("offersScroll");
+      if(!container) return;
+      const active = offers.filter(o => o.active);
+      if(active.length === 0){ container.innerHTML = ""; return; }
+      container.innerHTML = active.map((o, i) => `
+        <div class="offer-card o${(i % 3) + 1}">
+          <div class="oc-title">${o.label}</div>
+          <div class="oc-sub">${o.sub || ""}</div>
+        </div>
       `).join("");
     }
     function firstQtyValue(unit){
@@ -948,6 +963,8 @@
         renderEventChips(siteEvents);
         siteLocalities = (d.localities && d.localities.length) ? d.localities : DEFAULT_LOCALITIES;
         initLocalityDisplay();
+        siteOffers = (d.offers && d.offers.length) ? d.offers : DEFAULT_OFFERS;
+        renderOffers(siteOffers);
       }, err => console.error("Catalog load failed:", err));
       db.collection("settings").doc("content").onSnapshot(doc => {
         siteContent = doc.exists ? { about: "", privacy: "", contact: "", ...doc.data() } : { about: "", privacy: "", contact: "" };
@@ -958,6 +975,7 @@
       renderCategoryChips(DEFAULT_CATEGORIES);
       renderEventChips(DEFAULT_EVENTS);
       initLocalityDisplay();
+      renderOffers(DEFAULT_OFFERS);
     }
 
     function setOrderMode(btnEl, mode){
@@ -1223,19 +1241,94 @@
       }
     }
 
-    function goToPayment(){
+    let isFirstOrderCustomer = null; // null = not checked yet, true/false once known
+    let appliedOffer = null; // the discount offer currently applied, if any
+
+    async function goToPayment(){
       if(!mealType){
         showToast("Pehle koi occasion chuno");
         return;
       }
+      if(isFirstOrderCustomer === null && window.FIREBASE_CONFIGURED && customerPhone){
+        try{
+          const snap = await db.collection("orders").where("customerPhone", "==", customerPhone).limit(1).get();
+          isFirstOrderCustomer = snap.empty;
+        } catch(e){ isFirstOrderCustomer = false; }
+      }
+      autoApplyBestOffer();
+      renderPaymentStep();
+    }
+
+    function offerIsEligible(offer){
+      if(offer.kind !== "discount" || !offer.active) return false;
+      if(offer.firstOrderOnly && isFirstOrderCustomer !== true) return false;
+      return true;
+    }
+
+    function computeOfferDiscount(offer, subtotal){
+      if(offer.discountType === "percent") return Math.round(subtotal * offer.discountValue / 100);
+      return Math.min(offer.discountValue, subtotal);
+    }
+
+    // Auto-applies the best no-code discount the customer already qualifies for.
+    // Code-based offers are only applied when the customer types the code in.
+    function autoApplyBestOffer(){
+      if(appliedOffer && appliedOffer.code) return; // don't override a manually-entered code
+      const subtotal = cartTotal();
+      const autoOffers = siteOffers.filter(o => offerIsEligible(o) && !o.code);
+      let best = null;
+      autoOffers.forEach(o => {
+        const amt = computeOfferDiscount(o, subtotal);
+        if(!best || amt > best.amount) best = { key: o.key, label: o.label, amount: amt, code: "" };
+      });
+      appliedOffer = best;
+    }
+
+    function applyCouponCode(){
+      const input = document.getElementById("couponInput");
+      const code = input.value.trim().toUpperCase();
+      if(!code){ showToast("Coupon code likho"); return; }
+      const subtotal = cartTotal();
+      const offer = siteOffers.find(o => offerIsEligible(o) && o.code && o.code.toUpperCase() === code);
+      if(!offer){
+        showToast("Ye code valid nahi hai ya expire ho gaya hai");
+        return;
+      }
+      appliedOffer = { key: offer.key, label: offer.label, amount: computeOfferDiscount(offer, subtotal), code };
+      renderPaymentStep();
+      showToast(`${offer.label} apply ho gaya ✓`);
+    }
+
+    function removeAppliedOffer(){
+      appliedOffer = null;
       renderPaymentStep();
     }
 
     function renderPaymentStep(){
       const modal = document.getElementById("cartModal");
-      const total = cartTotal();
+      const subtotal = cartTotal();
+      const discount = appliedOffer ? Math.min(appliedOffer.amount, subtotal) : 0;
+      const total = subtotal - discount;
       modal.innerHTML = `
         <h3>Payment karo</h3>
+        <div class="field">
+          <label>Coupon Code (ho to)</label>
+          <div style="display:flex; gap:8px;">
+            <input type="text" id="couponInput" placeholder="e.g. GHAR20" style="text-transform:uppercase;">
+            <button class="btn btn-ghost btn-sm" onclick="applyCouponCode()">Apply</button>
+          </div>
+        </div>
+        ${appliedOffer ? `
+          <div style="background:var(--cream); border-radius:10px; padding:9px 12px; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center;">
+            <span style="font-size:11.5px; color:var(--sage); font-weight:700;"><i class="fa-solid fa-tag"></i> ${appliedOffer.label}</span>
+            <span style="font-size:11px; color:var(--text-soft); cursor:pointer; text-decoration:underline;" onclick="removeAppliedOffer()">Hatao</span>
+          </div>
+        ` : ""}
+        <div style="border-top:1px dashed var(--tan); padding-top:10px; margin-bottom:14px;">
+          <div style="display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:4px;"><span>Subtotal</span><span>₹${subtotal}</span></div>
+          ${discount > 0 ? `<div style="display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:4px; color:var(--sage);"><span>Discount</span><span>-₹${discount}</span></div>` : ""}
+          <div style="display:flex; justify-content:space-between; font-size:14.5px; font-weight:700; margin-top:6px;"><span>Total</span><span>₹${total}</span></div>
+        </div>
         <div class="qr-box">
           <img src="${paymentQrUrl || 'qr-code.jpg'}" alt="GharKaKhana UPI QR Code" style="width:180px; height:180px; border-radius:12px; object-fit:cover; background:var(--tan);"
                onerror="this.onerror=null; this.outerHTML='<div style=&quot;width:180px;height:180px;border-radius:12px;background:var(--tan);display:flex;align-items:center;justify-content:center;text-align:center;font-size:11px;color:var(--text-soft);padding:10px;&quot;><i class=&quot;fa-solid fa-qrcode&quot; style=&quot;font-size:26px;display:block;margin-bottom:6px;&quot;></i>Payment QR abhi set nahi hai</div>';">
@@ -1268,6 +1361,10 @@
       });
       const cookNames = Object.keys(byCook);
       const isMultiCook = cookNames.length > 1;
+      const subtotal = cartTotal();
+      const discountAmount = appliedOffer ? Math.min(appliedOffer.amount, subtotal) : 0;
+      const discountRatio = subtotal > 0 ? discountAmount / subtotal : 0;
+      const offerLabel = appliedOffer ? appliedOffer.label : "";
 
       const baseFields = {
         customer: customerName,
@@ -1284,12 +1381,16 @@
           cookNames.forEach((cookName, idx) => {
             const items = byCook[cookName];
             const subTotal = items.reduce((s, i) => s + i.total, 0);
+            const cookDiscount = Math.round(subTotal * discountRatio);
             db.collection("orders").doc(`${orderId}-${idx + 1}`).set({
               ...baseFields,
               item: items.map(i => i.name).join(", "),
               items: items,
               cook: cookName,
-              total: subTotal,
+              subtotal: subTotal,
+              discount: cookDiscount,
+              offerApplied: offerLabel,
+              total: subTotal - cookDiscount,
               orderGroupId: orderId,
               createdAt: firebase.firestore.FieldValue.serverTimestamp(),
             }).catch(err => console.error("Order save failed:", err));
@@ -1300,7 +1401,10 @@
             item: cart.map(i => i.name).join(", "),
             items: cart,
             cook: cookNames[0],
-            total: cartTotal(),
+            subtotal: subtotal,
+            discount: discountAmount,
+            offerApplied: offerLabel,
+            total: subtotal - discountAmount,
             createdAt: firebase.firestore.FieldValue.serverTimestamp(),
           }).catch(err => console.error("Order save failed:", err));
         }
@@ -1326,6 +1430,8 @@
       fulfilment = null;
       mealType = null;
       orderDate = todayISO();
+      appliedOffer = null;
+      isFirstOrderCustomer = null;
       updateCartBar();
       closeCart();
     }
