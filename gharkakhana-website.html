@@ -427,7 +427,10 @@
           <i class="fa-solid fa-download"></i> Install
         </div>
         <i class="fa-solid fa-share-nodes" onclick="shareApp()" style="cursor:pointer; font-size:15px;"></i>
-        <i class="fa-solid fa-user" id="profileIcon" onclick="openProfile()" style="cursor:pointer; font-size:15px;"></i>
+        <span style="position:relative;">
+          <i class="fa-solid fa-user" id="profileIcon" onclick="openProfile()" style="cursor:pointer; font-size:15px;"></i>
+          <span id="profileBadge" style="display:none; position:absolute; top:-3px; right:-4px; width:8px; height:8px; border-radius:50%; background:var(--chili); border:1.5px solid var(--cream);"></span>
+        </span>
       </div>
     </div>
   </div>
@@ -674,24 +677,28 @@
 
   <script>
     // Rough serving guide per unit — adjust as needed
-    const GRAMS_PER_PERSON = 250;   // for kg-based items
-    const PIECES_PER_PERSON = 4;    // for piece-based nashta items
-    const CUPS_PER_PERSON = 1;      // for cup-based chai
-    const PERSON_PER_BOX = 4;       // 1 box feeds ~4 people
+    const GRAMS_PER_PERSON = 250;       // for kg-based items (normal categories)
+    const LIGHT_GRAMS_PER_PERSON = 75;  // for "light" categories (sweets — people eat less)
+    const PIECES_PER_PERSON = 1;        // e.g. 1 puri = 1 person's serving
+    const CUPS_PER_PERSON = 1;          // for cup-based chai
+    const PERSON_PER_BOX = 4;           // 1 box feeds ~4 people
     const PEOPLE_OPTIONS = [5, 10, 15, 20, 30, 50, 100];
 
-    function estimatePeople(unit, qty){
+    function estimatePeople(unit, qty, mode){
+      if(mode === "none") return null; // no serving estimate for this category
+      const gramsPerPerson = mode === "light" ? LIGHT_GRAMS_PER_PERSON : GRAMS_PER_PERSON;
       if(unit === "piece") return Math.max(1, Math.round(qty / PIECES_PER_PERSON));
       if(unit === "cup") return Math.max(1, Math.round(qty / CUPS_PER_PERSON));
       if(unit === "box") return Math.max(1, Math.round(qty * PERSON_PER_BOX));
-      if(unit === "kg") return Math.max(1, Math.round((qty * 1000) / GRAMS_PER_PERSON));
+      if(unit === "kg") return Math.max(1, Math.round((qty * 1000) / gramsPerPerson));
       return Math.max(1, Math.round(qty)); // custom unit (admin-added) — assume 1 per person
     }
 
-    function baseQtyFromPeople(unit, guests){
+    function baseQtyFromPeople(unit, guests, mode){
+      const gramsPerPerson = mode === "light" ? LIGHT_GRAMS_PER_PERSON : GRAMS_PER_PERSON;
       if(unit === "piece") return guests * PIECES_PER_PERSON;
       if(unit === "box") return guests / PERSON_PER_BOX;
-      if(unit === "kg") return (guests * GRAMS_PER_PERSON) / 1000;
+      if(unit === "kg") return (guests * gramsPerPerson) / 1000;
       return guests; // custom unit — 1 per person
     }
 
@@ -715,22 +722,32 @@
     }
 
     // ---------- Live menu (from Firestore "menu" collection) ----------
-    const CATEGORY_ICON = { thali: null, roti: "fa-bread-slice", nashta: "fa-cookie-bite", chai: "fa-mug-hot", mithai: "fa-candy-cane" };
+    const CATEGORY_ICON = { thali: null, roti: "fa-bread-slice", nashta: "fa-cookie-bite", chai: "fa-mug-hot", mithai: "fa-candy-cane", cake: "fa-cake-candles" };
     function iconForItem(item){
       if(item.category === "thali") return item.type === "nonveg" ? "fa-drumstick-bite" : "fa-leaf";
       return CATEGORY_ICON[item.category] || "fa-utensils";
+    }
+
+    // Serving estimate ("~X logo ke liye") behaviour is admin-managed per category:
+    // "normal" = standard ratios, "light" = smaller ratio (e.g. sweets — people eat
+    // less), "none" = skip the estimate entirely (e.g. cake, cold drinks, boxes).
+    function categoryEstimateMode(categoryKey){
+      const cat = siteCategories.find(c => c.key === categoryKey);
+      return (cat && cat.estimateMode) || "normal";
     }
     function chipIconForCategory(key){
       if(key === "thali") return "fa-bowl-food";
       return CATEGORY_ICON[key] || "fa-utensils";
     }
     const DEFAULT_CATEGORIES = [
-      { key: "thali", label: "Thali" },
-      { key: "roti", label: "Roti/Mande" },
-      { key: "nashta", label: "Nashta" },
-      { key: "chai", label: "Chai" },
-      { key: "mithai", label: "Mithai" },
+      { key: "thali", label: "Thali", estimateMode: "normal" },
+      { key: "roti", label: "Roti/Mande", estimateMode: "normal" },
+      { key: "nashta", label: "Nashta", estimateMode: "normal" },
+      { key: "chai", label: "Chai", estimateMode: "none" },
+      { key: "mithai", label: "Mithai", estimateMode: "light" },
+      { key: "cake", label: "Cake", estimateMode: "none" },
     ];
+    let siteCategories = DEFAULT_CATEGORIES;
     const DEFAULT_OCCASIONS = [
       { key: "lunch", label: "Lunch", icon: "fa-sun", cutoffTime: "10:00" },
       { key: "dinner", label: "Dinner", icon: "fa-moon", cutoffTime: "18:00" },
@@ -895,16 +912,19 @@
       const item = group.items[ii];
       const panel = document.getElementById(`orderPanel-${gi}`);
       if(!panel || !item) return;
-      const isPercapita = item.category === "roti";
+      const estMode = categoryEstimateMode(item.category);
+      const isPercapita = item.category === "roti" && estMode !== "none";
       const defaultQty = firstQtyValue(item.unit);
       const defaultTotal = Math.round(item.price * defaultQty);
-      const defaultPeopleText = `~${estimatePeople(item.unit, defaultQty)} logo ke liye`;
+      const peopleEst = estimatePeople(item.unit, defaultQty, estMode);
+      const defaultPeopleText = peopleEst !== null ? `~${peopleEst} logo ke liye` : "";
 
       panel.dataset.price = item.price;
       panel.dataset.unit = item.unit;
       panel.dataset.mode = "unit";
       panel.dataset.name = item.name;
       panel.dataset.cook = group.cook;
+      panel.dataset.estMode = estMode;
 
       panel.innerHTML = `
         <div class="dish-top">
@@ -926,7 +946,7 @@
           <select class="qty-select" onchange="updateEstimate(this)">${qtyOptionsHTML(item.unit, "unit")}</select>
         </div>
         <div class="estimate-row">
-          <span class="est-people"><i class="fa-solid fa-users"></i> <span class="est-people-text">${defaultPeopleText}</span></span>
+          ${defaultPeopleText ? `<span class="est-people"><i class="fa-solid fa-users"></i> <span class="est-people-text">${defaultPeopleText}</span></span>` : "<span></span>"}
           <span class="est-total">Total: <span class="est-total-amount">₹${defaultTotal}</span></span>
         </div>
         <button class="add-btn full" onclick="addToCart(this)">+ Cart mein add karo</button>
@@ -957,7 +977,9 @@
       db.collection("settings").doc("catalog").onSnapshot(doc => {
         const d = doc.exists ? doc.data() : {};
         const categories = (d.categories && d.categories.length) ? d.categories : DEFAULT_CATEGORIES;
+        siteCategories = categories;
         renderCategoryChips(categories);
+        renderMenuList(latestMenuItems); // re-render so estimate mode changes apply live
         siteOccasions = (d.occasions && d.occasions.length) ? d.occasions : DEFAULT_OCCASIONS;
         siteEvents = (d.events && d.events.length) ? d.events : DEFAULT_EVENTS;
         renderEventChips(siteEvents);
@@ -969,9 +991,11 @@
       db.collection("settings").doc("content").onSnapshot(doc => {
         siteContent = doc.exists ? { about: "", privacy: "", contact: "", ...doc.data() } : { about: "", privacy: "", contact: "" };
       }, err => console.error("Content load failed:", err));
+      startOrderStatusWatcher();
     } else {
       renderMenuList(LOCAL_MENU_SEED);
       renderCookAccordion(LOCAL_MENU_SEED);
+      siteCategories = DEFAULT_CATEGORIES;
       renderCategoryChips(DEFAULT_CATEGORIES);
       renderEventChips(DEFAULT_EVENTS);
       initLocalityDisplay();
@@ -993,20 +1017,23 @@
       const price = parseFloat(panel.dataset.price);
       const unit = panel.dataset.unit;
       const mode = panel.dataset.mode || "unit";
+      const estMode = panel.dataset.estMode || "normal";
       const val = parseFloat(selectEl.value);
 
       let total, peopleText;
       if(mode === "people"){
-        const baseQty = baseQtyFromPeople(unit, val);
+        const baseQty = baseQtyFromPeople(unit, val, estMode);
         total = Math.round(price * baseQty);
         peopleText = `${val} logo ke liye (~${baseQty % 1 === 0 ? baseQty : baseQty.toFixed(1)} ${unitLabel(unit)})`;
       } else {
         total = Math.round(price * val);
-        peopleText = `~${estimatePeople(unit, val)} logo ke liye`;
+        const peopleEst = estimatePeople(unit, val, estMode);
+        peopleText = peopleEst !== null ? `~${peopleEst} logo ke liye` : "";
       }
 
       panel.querySelector(".est-total-amount").textContent = `₹${total}`;
-      panel.querySelector(".est-people-text").textContent = peopleText;
+      const peopleTextEl = panel.querySelector(".est-people-text");
+      if(peopleTextEl) peopleTextEl.textContent = peopleText;
     }
 
     // ---------- Cart & Checkout ----------
@@ -1033,11 +1060,12 @@
       const price = parseFloat(panel.dataset.price);
       const unit = panel.dataset.unit;
       const mode = panel.dataset.mode || "unit";
+      const estMode = panel.dataset.estMode || "normal";
       const val = parseFloat(panel.querySelector(".qty-select").value);
 
       let meta, total;
       if(mode === "people"){
-        const baseQty = baseQtyFromPeople(unit, val);
+        const baseQty = baseQtyFromPeople(unit, val, estMode);
         total = Math.round(price * baseQty);
         meta = `${val} log (~${baseQty % 1 === 0 ? baseQty : baseQty.toFixed(1)} ${unitLabel(unit)}) × ₹${price}/${unit}`;
       } else {
@@ -1181,6 +1209,10 @@
       localStorage.setItem("gkk_customer_name", customerName);
       localStorage.setItem("gkk_customer_phone", customerPhone);
       if(deliveryAddress) localStorage.setItem("gkk_customer_address", deliveryAddress);
+      startOrderStatusWatcher();
+      if(window.Notification && Notification.permission === "default"){
+        Notification.requestPermission().catch(() => {});
+      }
       renderMealTimeStep();
     }
 
@@ -1466,11 +1498,13 @@
     // Live: cook groups + per-person ratios are derived from the same admin-managed
     // menu data as the main list (GRAMS_PER_PERSON / PIECES_PER_PERSON / etc above),
     // so any cook/dish the admin adds shows up here automatically.
-    function perPersonQtyFor(unit){
+    function perPersonQtyFor(unit, categoryKey){
+      const mode = categoryKey ? categoryEstimateMode(categoryKey) : "normal";
+      const gramsPerPerson = mode === "light" ? LIGHT_GRAMS_PER_PERSON : GRAMS_PER_PERSON;
       if(unit === "piece") return PIECES_PER_PERSON;
       if(unit === "cup") return CUPS_PER_PERSON;
       if(unit === "box") return 1 / PERSON_PER_BOX;
-      if(unit === "kg") return GRAMS_PER_PERSON / 1000;
+      if(unit === "kg") return gramsPerPerson / 1000;
       return 1; // custom unit (admin-added) — assume 1 per person
     }
 
@@ -1484,7 +1518,7 @@
           groups.push({ cook: item.cook, items: [] });
         }
         groups[groupIndex[item.cook]].items.push({
-          name: item.name, unit: item.unit, price: item.price, perPersonQty: perPersonQtyFor(item.unit),
+          name: item.name, unit: item.unit, price: item.price, perPersonQty: perPersonQtyFor(item.unit, item.category),
         });
       });
       cookMenus = groups;
@@ -1590,6 +1624,7 @@
 
     function openProfile(){
       document.getElementById("profileOverlay").classList.add("open");
+      document.getElementById("profileBadge").style.display = "none";
       renderProfile();
     }
     function closeProfile(){
@@ -1644,6 +1679,7 @@
       customerPhone = phone;
       localStorage.setItem("gkk_customer_name", name);
       localStorage.setItem("gkk_customer_phone", phone);
+      startOrderStatusWatcher();
       renderProfile();
     }
 
@@ -1720,6 +1756,43 @@
       closeProfile();
       showToast("Order cart mein wapas add ho gaya");
       openCart();
+    }
+
+    // ---------- Background order-status watcher (works even with profile panel closed) ----------
+    // Persists last-seen status per order in localStorage so it survives page reloads,
+    // and shows a toast + sound + badge dot (+ a real browser Notification if the
+    // customer has granted permission) whenever admin approves or a cook advances an order.
+    const STATUS_WATCH_MESSAGE = {
+      Confirmed: "Aapka order admin ne approve kar diya — cook ke paas pahunch gaya ✓",
+      Cooking: "Aapka order banna shuru ho gaya!",
+      Declined: "Maaf karo, aapka order cancel kar diya gaya.",
+    };
+    let orderStatusWatcherPhone = null; // which phone the current watcher is subscribed for
+    let orderStatusWatcherUnsub = null;
+    function startOrderStatusWatcher(){
+      if(!window.FIREBASE_CONFIGURED || !customerPhone) return;
+      if(orderStatusWatcherPhone === customerPhone) return; // already watching this phone
+      if(orderStatusWatcherUnsub) orderStatusWatcherUnsub();
+      orderStatusWatcherPhone = customerPhone;
+      orderStatusWatcherUnsub = db.collection("orders").where("customerPhone", "==", customerPhone).onSnapshot(snapshot => {
+        snapshot.docChanges().forEach(change => {
+          if(change.type !== "modified" && change.type !== "added") return;
+          const order = change.doc.data();
+          const seenKey = `gkk_seen_status_${change.doc.id}`;
+          const lastSeen = localStorage.getItem(seenKey);
+          if(lastSeen === order.status) return; // already notified for this status
+          localStorage.setItem(seenKey, order.status);
+          if(lastSeen === null) return; // first time we're seeing this order — don't notify for its initial (Pending) state
+          const msg = STATUS_WATCH_MESSAGE[order.status] || (order.status && order.status.startsWith("Ready") ? `Aapka order ${order.status.toLowerCase()} hai!` : null);
+          if(!msg) return;
+          playAlertSound();
+          document.getElementById("profileBadge").style.display = "block";
+          showToast(msg);
+          if(window.Notification && Notification.permission === "granted"){
+            try{ new Notification("GharKaKhana", { body: msg }); } catch(e){}
+          }
+        });
+      }, err => console.error("Order watcher failed:", err));
     }
 
     // Small, dependency-free alert beep — used for order status changes here, and

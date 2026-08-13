@@ -320,11 +320,12 @@
   let settings = {
     qrUrl: "",
     categories: [
-      { key: "thali", label: "Thali" },
-      { key: "roti", label: "Roti & Mande" },
-      { key: "nashta", label: "Nashta" },
-      { key: "chai", label: "Chai" },
-      { key: "mithai", label: "Mithai" },
+      { key: "thali", label: "Thali", estimateMode: "normal" },
+      { key: "roti", label: "Roti & Mande", estimateMode: "normal" },
+      { key: "nashta", label: "Nashta", estimateMode: "normal" },
+      { key: "chai", label: "Chai", estimateMode: "none" },
+      { key: "mithai", label: "Mithai", estimateMode: "light" },
+      { key: "cake", label: "Cake", estimateMode: "none" },
     ],
     units: [
       { key: "kg", label: "Per kg" },
@@ -417,7 +418,12 @@
     db.collection("orders").onSnapshot(snapshot => {
       if(ordersLoadedOnce){
         const newPending = snapshot.docChanges().some(c => c.type === "added" && c.doc.data().status === "Pending");
-        if(newPending) playAlertSound();
+        // Also alert when a cook moves an order forward (Cooking / Ready...) so
+        // admin can track progress without keeping the Orders tab open.
+        const cookProgress = snapshot.docChanges().some(c =>
+          c.type === "modified" && (c.doc.data().status === "Cooking" || (c.doc.data().status || "").startsWith("Ready"))
+        );
+        if(newPending || cookProgress) playAlertSound();
       }
       data.orders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       if(currentTab === "orders"){ renderCalendar(); renderOrdersList(); }
@@ -516,6 +522,7 @@
           <span class="badge ${item.status}">${item.status === "active" ? "Active" : "Inactive"}</span>
         </div>
         <div class="row-actions">
+          ${currentTab === "cooks" ? `<div class="icon-btn" onclick="viewCookProfile('${item.id}')"><i class="fa-solid fa-id-card"></i>Profile</div>` : ""}
           <div class="icon-btn" onclick="openModal('${item.id}')"><i class="fa-solid fa-pen"></i>Edit</div>
           <div class="icon-btn" onclick="toggleStatus('${item.id}')"><i class="fa-solid fa-toggle-on"></i>${item.status === "active" ? "Deactivate" : "Activate"}</div>
           <div class="icon-btn danger" onclick="deleteEntry('${item.id}')"><i class="fa-solid fa-trash"></i>Delete</div>
@@ -591,9 +598,18 @@
 
       <div class="settings-card">
         <h3><i class="fa-solid fa-tags"></i> Dish Categories</h3>
-        <p>Ye categories Menu mein dish add karte waqt dropdown mein dikhengi.</p>
-        <div class="chip-list">
-          ${settings.categories.map(c => `<div class="chip">${c.label}<i class="fa-solid fa-xmark" onclick="removeCategory('${c.key}')"></i></div>`).join("")}
+        <p>Ye categories Menu mein dish add karte waqt dropdown mein dikhengi. "Serving estimate" decide karta hai ki customer ko dish select karte waqt "~X logo ke liye" wala hisaab dikhe ya nahi (jaise Chai/Cold drink mein zaroorat nahi, Mithai mein kam matra lagti hai).</p>
+        <div id="categoryRows">
+          ${settings.categories.map(c => `
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+              <div class="chip" style="flex:1;">${c.label}<i class="fa-solid fa-xmark" onclick="removeCategory('${c.key}')"></i></div>
+              <select onchange="setCategoryEstimateMode('${c.key}', this.value)" style="flex:0 0 auto; padding:8px; border-radius:8px; border:1px solid var(--tan); font-size:11px;">
+                <option value="normal" ${(!c.estimateMode || c.estimateMode === "normal") ? "selected" : ""}>Normal estimate</option>
+                <option value="light" ${c.estimateMode === "light" ? "selected" : ""}>Halka (kam matra)</option>
+                <option value="none" ${c.estimateMode === "none" ? "selected" : ""}>Estimate nahi chahiye</option>
+              </select>
+            </div>
+          `).join("")}
         </div>
         <div class="chip-add-row">
           <input type="text" id="newCategoryInput" placeholder="e.g. Biryani">
@@ -734,13 +750,19 @@
     if(!label){ showToast("Category ka naam likho"); return; }
     const key = slugify(label);
     if(settings.categories.some(c => c.key === key)){ showToast("Ye category pehle se hai"); return; }
-    settings.categories.push({ key, label });
+    settings.categories.push({ key, label, estimateMode: "normal" });
     saveCatalog();
   }
 
   function removeCategory(key){
     if(settings.categories.length <= 1){ showToast("Kam se kam ek category rehni chahiye"); return; }
     settings.categories = settings.categories.filter(c => c.key !== key);
+    saveCatalog();
+  }
+
+  function setCategoryEstimateMode(key, mode){
+    const cat = settings.categories.find(c => c.key === key);
+    if(cat) cat.estimateMode = mode;
     saveCatalog();
   }
 
@@ -1306,6 +1328,29 @@
   }
 
   // ---------- Share / QR ----------
+  // ---------- Cook Profile (view-only — photo + settlement QR, no need to open Edit) ----------
+  function viewCookProfile(id){
+    const cook = data.cooks.find(c => c.id === id);
+    if(!cook) return;
+    const modal = document.getElementById("qrModal");
+    modal.innerHTML = `
+      <h3>${cook.name}</h3>
+      <div style="display:flex; align-items:center; gap:12px; margin:12px 0;">
+        ${cook.photoUrl ? `<img src="${cook.photoUrl}" style="width:56px; height:56px; border-radius:14px; object-fit:cover;">` : `<div class="avatar" style="width:56px; height:56px; font-size:18px;">${initials(cook.name)}</div>`}
+        <div>
+          <div style="font-size:12.5px; color:var(--text-soft);"><i class="fa-solid fa-location-dot"></i> ${cook.area}</div>
+          <div style="font-size:12.5px; color:var(--text-soft); margin-top:2px;"><i class="fa-solid fa-phone"></i> ${cook.phone}</div>
+        </div>
+      </div>
+      ${cook.qrUrl ? `
+        <p style="font-size:11.5px; color:var(--text-soft); margin-bottom:8px;">Settlement QR — is cook ko paisa dene ke liye scan karo:</p>
+        <img src="${cook.qrUrl}" style="width:180px; height:180px; border-radius:14px; object-fit:cover; display:block; margin:0 auto 14px;">
+      ` : `<p style="font-size:12px; color:var(--text-soft); text-align:center; padding:20px 0;">Is cook ki QR photo abhi add nahi hui hai — "Edit" se add kar sakte ho.</p>`}
+      <div class="modal-actions"><button class="btn btn-primary" style="flex:1;" onclick="document.getElementById('qrOverlay').classList.remove('open')">Band karo</button></div>
+    `;
+    document.getElementById("qrOverlay").classList.add("open");
+  }
+
   function showAppQR(path, title){
     const url = new URL(path, window.location.href).href;
     const modal = document.getElementById("qrModal");
