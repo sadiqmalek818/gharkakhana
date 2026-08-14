@@ -12,5 +12,6 @@
 //      AI widgets — the referrer restriction is what actually protects it).
 // ---------------------------------------------------------------------------
 
-window.GEMINI_API_KEY = "AQ.Ab8RN6JOj4_Vm5iflMWK82Sh7YE15pqeecWhZOxjUIPxlpz5gw";
-window.GEMINI_CONFIGURED = window.GEMINI_API_KEY && window.GEMINI_API_KEY !== "AQ.Ab8RN6JOj4_Vm5iflMWK82Sh7YE15pqeecWhZOxjUIPxlpz5gw";
+window.GEMINI_API_KEY = "AQ.Ab8RN6JOj4_Vm5if1MWK82Sh7YE15pqeecWhZOxjUIPxlpz5gw";
+window.GEMINI_CONFIGURED = Boolean(window.GEMINI_API_KEY && window.GEMINI_API_KEY !== "");
+
