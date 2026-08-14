@@ -22,6 +22,8 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 <script src="firebase-config.js"></script>
+<!-- AI chat assistant (Google Gemini) — set GEMINI_API_KEY in gemini-config.js -->
+<script src="gemini-config.js"></script>
 <style>
   :root{
     --charcoal:#2B1B17;
@@ -362,6 +364,44 @@
     border:none; cursor:pointer;
   }
 
+  /* AI chat assistant */
+  .chat-fab{
+    position:fixed; right:16px; bottom:78px; z-index:70; width:52px; height:52px; border-radius:50%;
+    background:var(--charcoal); color:var(--turmeric); display:flex; align-items:center; justify-content:center;
+    font-size:20px; box-shadow:0 8px 22px rgba(0,0,0,0.3); cursor:pointer; border:none;
+  }
+  .chat-panel{
+    position:fixed; inset:0; background:var(--cream); z-index:200; display:none; flex-direction:column;
+  }
+  .chat-panel.open{display:flex;}
+  .chat-head{
+    background:var(--charcoal); color:var(--cream); padding:16px 18px; display:flex; align-items:center;
+    justify-content:space-between; flex:0 0 auto;
+  }
+  .chat-head .ct{font-family:'Fraunces',serif; font-weight:700; font-size:15px;}
+  .chat-head .cs{font-size:10.5px; color:#C9B79C; margin-top:2px;}
+  .chat-body{flex:1; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:10px;}
+  .chat-msg{max-width:82%; padding:10px 13px; border-radius:14px; font-size:12.5px; line-height:1.5;}
+  .chat-msg.bot{background:white; border:1px solid var(--tan); align-self:flex-start; border-bottom-left-radius:4px;}
+  .chat-msg.user{background:var(--chili); color:white; align-self:flex-end; border-bottom-right-radius:4px;}
+  .chat-msg.typing{background:white; border:1px solid var(--tan); align-self:flex-start; color:var(--text-soft);}
+  .chat-chip-row{display:flex; flex-wrap:wrap; gap:6px; margin-top:6px;}
+  .chat-add-chip{
+    background:var(--turmeric); color:var(--charcoal); font-size:11px; font-weight:700;
+    padding:6px 11px; border-radius:999px; cursor:pointer; border:none;
+  }
+  .chat-input-row{
+    flex:0 0 auto; display:flex; gap:8px; padding:12px 14px calc(12px + env(safe-area-inset-bottom));
+    background:white; border-top:1px solid var(--tan);
+  }
+  .chat-input-row input{
+    flex:1; padding:11px 14px; border-radius:999px; border:1px solid var(--tan); font-size:13px; font-family:'Inter',sans-serif;
+  }
+  .chat-send-btn{
+    width:42px; height:42px; border-radius:50%; background:var(--chili); color:white; border:none;
+    display:flex; align-items:center; justify-content:center; cursor:pointer; flex:0 0 auto;
+  }
+
   /* Cart / checkout modal */
   .overlay{
     position:fixed; inset:0; background:rgba(43,27,23,0.55); display:none;
@@ -671,6 +711,23 @@
     <button class="inner" id="cartBar" onclick="openCart()"><i class="fa-solid fa-bag-shopping"></i> Cart khaali hai</button>
   </div>
 
+  <button class="chat-fab" onclick="openChat()"><i class="fa-solid fa-comment-dots"></i></button>
+
+  <div class="chat-panel" id="chatPanel">
+    <div class="chat-head">
+      <div>
+        <div class="ct"><i class="fa-solid fa-bowl-food"></i> GharKaKhana Assistant</div>
+        <div class="cs">Dishes suggest kare, sawal poocho</div>
+      </div>
+      <i class="fa-solid fa-xmark" style="cursor:pointer; font-size:18px;" onclick="closeChat()"></i>
+    </div>
+    <div class="chat-body" id="chatBody"></div>
+    <div class="chat-input-row">
+      <input type="text" id="chatInput" placeholder="e.g. Aaj lunch ke liye kya achha hai?" onkeydown="if(event.key==='Enter') sendChatMessage()">
+      <button class="chat-send-btn" onclick="sendChatMessage()"><i class="fa-solid fa-paper-plane"></i></button>
+    </div>
+  </div>
+
   <div class="overlay" id="cartOverlay">
     <div class="modal" id="cartModal"></div>
   </div>
@@ -859,6 +916,18 @@
         return;
       }
 
+      // Remember which dish was selected per cook before we rebuild the list —
+      // otherwise every Firestore update (menu/cooks/settings) would silently
+      // snap the selection back to each cook's first dish.
+      const previousSelection = {};
+      menuGroups.forEach((g, gi) => {
+        const activeChip = document.querySelector(`#dishScroll-${gi} .dish-chip.active`);
+        if(activeChip){
+          const idx = Number(activeChip.id.split("-")[2]);
+          if(g.items[idx]) previousSelection[g.cook] = g.items[idx].name;
+        }
+      });
+
       // Group by cook, preserving first-seen order
       const groups = [];
       const groupIndex = {};
@@ -883,7 +952,7 @@
               const icon = iconForItem(item);
               const vegClass = item.type === "nonveg" ? "nonveg" : "";
               return `
-              <div class="dish-chip ${ii === 0 ? "active" : ""}" id="chip-${gi}-${ii}" data-cat="${item.category}" onclick="selectDish(${gi},${ii})">
+              <div class="dish-chip" id="chip-${gi}-${ii}" data-cat="${item.category}" onclick="selectDish(${gi},${ii})">
                 <div class="dish-media chip cat-${item.category}">${item.photoUrl ? `<img src="${item.photoUrl}">` : `<i class="fa-solid ${icon} dm-icon"></i>`}<span class="dm-vegdot ${vegClass}"></span></div>
                 <div class="dish-chip-name">${item.name}</div>
               </div>`;
@@ -893,7 +962,16 @@
         </div>
       `).join("");
 
-      groups.forEach((g, gi) => { if(g.items.length) renderOrderPanel(gi, 0); });
+      groups.forEach((g, gi) => {
+        if(!g.items.length) return;
+        let selectIdx = 0;
+        const prevName = previousSelection[g.cook];
+        if(prevName){
+          const foundIdx = g.items.findIndex(it => it.name === prevName);
+          if(foundIdx >= 0) selectIdx = foundIdx;
+        }
+        selectDish(gi, selectIdx);
+      });
 
       // Re-apply any active category filter to the freshly rendered cards
       const activeChip = document.querySelector("#categoryChips .cat-icon.active");
@@ -1508,6 +1586,13 @@
       return 1; // custom unit (admin-added) — assume 1 per person
     }
 
+    // Selection keys are "cookName::dishName" (stable) rather than positional
+    // indices — indices used to shift whenever Firestore re-sent the menu/cooks
+    // data, silently pointing selectedComboKeys at the wrong (or a now-missing)
+    // item and making "Thaal cart mein add karo" throw/do nothing.
+    function comboKey(cookName, itemName){ return `${cookName}::${itemName}`; }
+    function comboDomId(key){ return key.replace(/[^a-zA-Z0-9]/g, "_"); }
+
     function renderCookAccordion(items){
       const active = (items || []).filter(i => i.status === "active");
       const groups = [];
@@ -1523,26 +1608,38 @@
       });
       cookMenus = groups;
 
+      // Drop selections for dishes that no longer exist (e.g. admin removed them)
+      const validKeys = new Set();
+      groups.forEach(g => g.items.forEach(it => validKeys.add(comboKey(g.cook, it.name))));
+      Array.from(selectedComboKeys).forEach(k => { if(!validKeys.has(k)) selectedComboKeys.delete(k); });
+
       const container = document.getElementById("cookAccordion");
       if(!container) return;
       if(groups.length === 0){
         container.innerHTML = `<div style="text-align:center; padding:20px 10px; color:var(--text-soft); font-size:12.5px;">Abhi koi dish available nahi hai.</div>`;
         return;
       }
+      const guests = parseInt(document.getElementById("comboGuests")?.value) || 0;
       container.innerHTML = groups.map((cookObj, ci) => `
         <details class="cook-acc" ${ci === 0 ? "open" : ""}>
           <summary>${cookPhotoMap[cookObj.cook] ? `<img class="cgh-avatar" src="${cookPhotoMap[cookObj.cook]}">` : `<i class="fa-solid fa-chef-hat"></i>`} ${cookObj.cook}</summary>
           <div class="cook-acc-body">
-            ${cookObj.items.map((item, ii) => {
-              const key = `${ci}-${ii}`;
+            ${cookObj.items.map((item) => {
+              const key = comboKey(cookObj.cook, item.name);
+              const domId = comboDomId(key);
+              const isSelected = selectedComboKeys.has(key);
+              const baseQty = item.perPersonQty * guests;
+              const qtyText = isSelected && guests > 0
+                ? `${guests} logo ke liye ~${baseQty % 1 === 0 ? baseQty : baseQty.toFixed(1)} ${unitLabel(item.unit)}`
+                : "Select karke total mein dekho";
               return `
-              <div class="combo-row" id="combo-${key}" onclick="toggleComboItem('${key}')">
+              <div class="combo-row ${isSelected ? "selected" : ""}" id="combo-${domId}" onclick="toggleComboItem('${key.replace(/'/g, "\\'")}')">
                 <div class="ci-check"><i class="fa-solid fa-check"></i></div>
                 <div class="ci-body">
                   <div class="ci-title">${item.name}</div>
                   <div class="ci-sub">₹${item.price}/${item.unit}</div>
                   <div class="ci-ratio"><i class="fa-solid fa-scale-balanced"></i> ${item.unit === "piece" || item.unit === "cup" ? item.perPersonQty + " " + unitLabel(item.unit).replace("/","") : item.unit === "box" ? Math.round(item.perPersonQty*100)/100 + " box" : item.unit === "kg" ? Math.round(item.perPersonQty*1000) + "g" : item.perPersonQty + " " + unitLabel(item.unit)}/person</div>
-                  <div class="ci-sub" id="qtytext-${key}" style="margin-top:4px;">Select karke total mein dekho</div>
+                  <div class="ci-sub" id="qtytext-${domId}" style="margin-top:4px;">${qtyText}</div>
                 </div>
               </div>`;
             }).join("")}
@@ -1552,18 +1649,21 @@
     }
 
     function itemFromKey(key){
-      const [ci, ii] = key.split("-").map(Number);
-      return { cookObj: cookMenus[ci], item: cookMenus[ci].items[ii] };
+      const [cookName, itemName] = key.split("::");
+      const cookObj = cookMenus.find(c => c.cook === cookName);
+      const item = cookObj ? cookObj.items.find(i => i.name === itemName) : null;
+      return { cookObj, item };
     }
 
     function toggleComboItem(key){
-      const row = document.getElementById(`combo-${key}`);
+      const domId = comboDomId(key);
+      const row = document.getElementById(`combo-${domId}`);
       if(selectedComboKeys.has(key)){
         selectedComboKeys.delete(key);
-        row.classList.remove("selected");
+        if(row) row.classList.remove("selected");
       } else {
         selectedComboKeys.add(key);
-        row.classList.add("selected");
+        if(row) row.classList.add("selected");
       }
       updateComboTotal();
     }
@@ -1573,16 +1673,17 @@
       let total = 0;
       selectedComboKeys.forEach(key => {
         const { item } = itemFromKey(key);
+        if(!item) return; // dish no longer exists — skip safely instead of crashing
         const baseQty = item.perPersonQty * guests;
         total += item.price * baseQty;
-        const qtyText = document.getElementById(`qtytext-${key}`);
+        const qtyText = document.getElementById(`qtytext-${comboDomId(key)}`);
         if(qtyText) qtyText.textContent = `${guests} logo ke liye ~${baseQty % 1 === 0 ? baseQty : baseQty.toFixed(1)} ${unitLabel(item.unit)}`;
       });
       // reset text for unselected items
-      cookMenus.forEach((cookObj, ci) => cookObj.items.forEach((item, ii) => {
-        const key = `${ci}-${ii}`;
+      cookMenus.forEach(cookObj => cookObj.items.forEach(item => {
+        const key = comboKey(cookObj.cook, item.name);
         if(!selectedComboKeys.has(key)){
-          const qtyText = document.getElementById(`qtytext-${key}`);
+          const qtyText = document.getElementById(`qtytext-${comboDomId(key)}`);
           if(qtyText) qtyText.textContent = "Select karke total mein dekho";
         }
       }));
@@ -1597,13 +1698,16 @@
       }
       const guests = parseInt(document.getElementById("comboGuests").value);
       let total = 0;
+      let addedCount = 0;
       // One cart entry per dish (with its real cook) — not one combined entry —
       // so each cook's items can later be split into their own order ticket.
       Array.from(selectedComboKeys).forEach(key => {
         const { cookObj, item } = itemFromKey(key);
+        if(!cookObj || !item) return; // dish was removed since selection — skip safely
         const baseQty = item.perPersonQty * guests;
         const lineTotal = Math.round(item.price * baseQty);
         total += lineTotal;
+        addedCount++;
         cart.push({
           name: `${item.name} (Apna Thaal — ${guests} log)`,
           cook: cookObj.cook,
@@ -1611,6 +1715,12 @@
           total: lineTotal,
         });
       });
+      if(addedCount === 0){
+        showToast("Ye dishes ab available nahi hain — dobara select karo");
+        return;
+      }
+      selectedComboKeys.clear();
+      renderCookAccordion(latestMenuItems);
       updateCartBar();
       showToast(`Apna Thaal cart mein add ho gaya — ₹${Math.round(total)}`);
     }
@@ -1810,6 +1920,127 @@
         g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
         o.start(); o.stop(ctx.currentTime + 0.35);
       } catch(e){ /* audio not available — ignore */ }
+    }
+
+    // ---------- AI Chat Assistant (Google Gemini — free tier) ----------
+    let chatHistory = [];
+
+    function openChat(){
+      document.getElementById("chatPanel").classList.add("open");
+      if(document.getElementById("chatBody").children.length === 0){
+        appendChatMessage("bot", "Assalam-o-Alaikum! Main GharKaKhana ka assistant hun 🙂 Bataiye — kya khane ka mann hai, ya kisi occasion ke liye order karna hai?");
+      }
+    }
+    function closeChat(){
+      document.getElementById("chatPanel").classList.remove("open");
+    }
+
+    function appendChatMessage(role, text, dishChips){
+      const body = document.getElementById("chatBody");
+      const div = document.createElement("div");
+      div.className = `chat-msg ${role}`;
+      div.textContent = text;
+      body.appendChild(div);
+      if(dishChips && dishChips.length){
+        const row = document.createElement("div");
+        row.className = "chat-chip-row";
+        dishChips.forEach(item => {
+          const btn = document.createElement("button");
+          btn.className = "chat-add-chip";
+          btn.textContent = `+ ${item.name}`;
+          btn.onclick = () => addDishFromChat(item);
+          row.appendChild(btn);
+        });
+        body.appendChild(row);
+      }
+      body.scrollTop = body.scrollHeight;
+    }
+
+    function addDishFromChat(item){
+      const qty = firstQtyValue(item.unit);
+      const total = Math.round(item.price * qty);
+      cart.push({
+        name: item.name,
+        cook: item.cook,
+        meta: `${qty} ${unitLabel(item.unit)} × ₹${item.price}/${item.unit}`,
+        total,
+      });
+      updateCartBar();
+      showToast(`${item.name} cart mein add ho gaya`);
+    }
+
+    // Rebuilt fresh on every message so the AI always sees today's live menu,
+    // offers, localities and order timings — not stale data from page load.
+    function buildChatSystemPrompt(){
+      const menuLines = (latestMenuItems || []).filter(i => i.status === "active")
+        .map(i => `- ${i.name} (${i.cook}) — ₹${i.price}/${i.unit}, category: ${i.category}`).join("\n");
+      const offerLines = (siteOffers || []).filter(o => o.active)
+        .map(o => `- ${o.label}${o.code ? ` (code: ${o.code})` : ""}`).join("\n");
+      const localityLine = (siteLocalities || []).map(l => l.label).join(", ");
+      const occasionLine = (siteOccasions || []).map(o => `${o.label}${o.cutoffTime ? ` (cutoff ${o.cutoffTime})` : ""}`).join(", ");
+      return `Tum GharKaKhana ke friendly ordering assistant ho — Ahmedabad based home-cooked food delivery platform, jahan alag ghar ke cooks apni dishes bechte hain.
+
+Tumhara kaam:
+- Customer ko dishes suggest karna unki pasand/mood/occasion ke hisaab se, sirf neeche di gayi LIVE MENU list mein se
+- Menu, prices, offers, delivery areas, order timing ke sawalo ka jawab dena
+- Hinglish mein, chhota aur friendly jawab do (2-4 lines, jab tak zyada detail na maangi ho)
+- Jab dish suggest karo, uska EXACT naam bolo jaisa list mein hai (customer use tap karke cart mein add kar sakta hai)
+- Tum khud order place NAHI kar sakte — customer khud "+ dish naam" chip tap karega
+- Menu se bahar ke sawaal ho to politely GharKaKhana ke topic pe wapas le aao
+
+LIVE MENU (sirf active dishes):
+${menuLines || "Abhi koi dish available nahi hai"}
+
+ACTIVE OFFERS:
+${offerLines || "Abhi koi offer nahi hai"}
+
+DELIVERY AREAS: ${localityLine || "N/A"}
+ORDER TIMINGS: ${occasionLine || "N/A"}`;
+    }
+
+    async function sendChatMessage(){
+      const input = document.getElementById("chatInput");
+      const msg = input.value.trim();
+      if(!msg) return;
+      if(!window.GEMINI_CONFIGURED){
+        appendChatMessage("bot", "Assistant abhi set up nahi hua hai — GharKaKhana team ko batao ki gemini-config.js mein API key daalein.");
+        input.value = "";
+        return;
+      }
+      appendChatMessage("user", msg);
+      input.value = "";
+
+      const body = document.getElementById("chatBody");
+      const typingEl = document.createElement("div");
+      typingEl.className = "chat-msg typing";
+      typingEl.textContent = "Type kar raha hun...";
+      body.appendChild(typingEl);
+      body.scrollTop = body.scrollHeight;
+
+      chatHistory.push({ role: "user", parts: [{ text: msg }] });
+
+      try{
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${window.GEMINI_API_KEY}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: buildChatSystemPrompt() }] },
+            contents: chatHistory,
+          }),
+        });
+        const data = await res.json();
+        typingEl.remove();
+        const reply = data?.candidates?.[0]?.content?.parts?.[0]?.text || "Maaf karo, samajh nahi paya. Dobara try karo?";
+        chatHistory.push({ role: "model", parts: [{ text: reply }] });
+
+        // Any live menu item named in the reply gets a tap-to-add chip
+        const mentioned = (latestMenuItems || []).filter(i => i.status === "active" && reply.toLowerCase().includes(i.name.toLowerCase()));
+        appendChatMessage("bot", reply, mentioned.slice(0, 4));
+      } catch(e){
+        typingEl.remove();
+        appendChatMessage("bot", "Kuch gadbad ho gayi, dobara try karo.");
+        console.error("Gemini chat error:", e);
+      }
     }
 
     function showToast(msg){
