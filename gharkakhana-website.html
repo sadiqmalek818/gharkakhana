@@ -711,7 +711,10 @@
     <button class="inner" id="cartBar" onclick="openCart()"><i class="fa-solid fa-bag-shopping"></i> Cart khaali hai</button>
   </div>
 
-  <button class="chat-fab" onclick="openChat()"><i class="fa-solid fa-comment-dots"></i></button>
+  <button class="chat-fab" onclick="openChat()">
+    <i class="fa-solid fa-comment-dots"></i>
+    <span id="chatBadge" style="display:none; position:absolute; top:2px; right:2px; width:10px; height:10px; border-radius:50%; background:var(--chili); border:1.5px solid var(--cream);"></span>
+  </button>
 
   <div class="chat-panel" id="chatPanel">
     <div class="chat-head">
@@ -764,6 +767,8 @@
       if(unit === "cup") return "cups";
       if(unit === "box") return "box";
       if(unit === "kg") return "kg";
+      const custom = siteUnits.find(u => u.key === unit);
+      if(custom) return custom.label.replace(/^Per\s+/i, "").trim() || custom.label;
       return unit; // custom unit (admin-added) — show as-is
     }
 
@@ -805,6 +810,13 @@
       { key: "cake", label: "Cake", estimateMode: "none" },
     ];
     let siteCategories = DEFAULT_CATEGORIES;
+    const DEFAULT_UNITS = [
+      { key: "kg", label: "Per kg" },
+      { key: "piece", label: "Per piece" },
+      { key: "cup", label: "Per cup" },
+      { key: "box", label: "Per box (4 person)" },
+    ];
+    let siteUnits = DEFAULT_UNITS;
     const DEFAULT_OCCASIONS = [
       { key: "lunch", label: "Lunch", icon: "fa-sun", cutoffTime: "10:00" },
       { key: "dinner", label: "Dinner", icon: "fa-moon", cutoffTime: "18:00" },
@@ -1065,6 +1077,7 @@
         initLocalityDisplay();
         siteOffers = (d.offers && d.offers.length) ? d.offers : DEFAULT_OFFERS;
         renderOffers(siteOffers);
+        siteUnits = (d.units && d.units.length) ? d.units : DEFAULT_UNITS;
       }, err => console.error("Catalog load failed:", err));
       db.collection("settings").doc("content").onSnapshot(doc => {
         siteContent = doc.exists ? { about: "", privacy: "", contact: "", ...doc.data() } : { about: "", privacy: "", contact: "" };
@@ -1078,6 +1091,7 @@
       renderEventChips(DEFAULT_EVENTS);
       initLocalityDisplay();
       renderOffers(DEFAULT_OFFERS);
+      siteUnits = DEFAULT_UNITS;
     }
 
     function setOrderMode(btnEl, mode){
@@ -1132,28 +1146,33 @@
     const UPI_ID = "gharkakhana@upi"; // replace with real UPI ID before going live
 
     function addToCart(btn){
-      const panel = btn.closest(".order-panel");
-      const name = panel.dataset.name;
-      const cook = panel.dataset.cook;
-      const price = parseFloat(panel.dataset.price);
-      const unit = panel.dataset.unit;
-      const mode = panel.dataset.mode || "unit";
-      const estMode = panel.dataset.estMode || "normal";
-      const val = parseFloat(panel.querySelector(".qty-select").value);
+      try{
+        const panel = btn.closest(".order-panel");
+        const name = panel.dataset.name;
+        const cook = panel.dataset.cook;
+        const price = parseFloat(panel.dataset.price);
+        const unit = panel.dataset.unit;
+        const mode = panel.dataset.mode || "unit";
+        const estMode = panel.dataset.estMode || "normal";
+        const val = parseFloat(panel.querySelector(".qty-select").value);
 
-      let meta, total;
-      if(mode === "people"){
-        const baseQty = baseQtyFromPeople(unit, val, estMode);
-        total = Math.round(price * baseQty);
-        meta = `${val} log (~${baseQty % 1 === 0 ? baseQty : baseQty.toFixed(1)} ${unitLabel(unit)}) × ₹${price}/${unit}`;
-      } else {
-        total = Math.round(price * val);
-        meta = `${val} ${unitLabel(unit)} × ₹${price}/${unit}`;
+        let meta, total;
+        if(mode === "people"){
+          const baseQty = baseQtyFromPeople(unit, val, estMode);
+          total = Math.round(price * baseQty);
+          meta = `${val} log (~${baseQty % 1 === 0 ? baseQty : baseQty.toFixed(1)} ${unitLabel(unit)}) × ₹${price}/${unit}`;
+        } else {
+          total = Math.round(price * val);
+          meta = `${val} ${unitLabel(unit)} × ₹${price}/${unit}`;
+        }
+
+        cart.push({ name, cook, meta, total });
+        updateCartBar();
+        showToast(`${name} cart mein add ho gaya`);
+      } catch(err){
+        console.error("addToCart failed:", err);
+        showToast("Error: " + err.message);
       }
-
-      cart.push({ name, cook, meta, total });
-      updateCartBar();
-      showToast(`${name} cart mein add ho gaya`);
     }
 
 
@@ -1692,37 +1711,45 @@
     }
 
     function addComboToCart(){
-      if(selectedComboKeys.size === 0){
-        showToast("Pehle kam se kam ek item chuno");
-        return;
-      }
-      const guests = parseInt(document.getElementById("comboGuests").value);
-      let total = 0;
-      let addedCount = 0;
-      // One cart entry per dish (with its real cook) — not one combined entry —
-      // so each cook's items can later be split into their own order ticket.
-      Array.from(selectedComboKeys).forEach(key => {
-        const { cookObj, item } = itemFromKey(key);
-        if(!cookObj || !item) return; // dish was removed since selection — skip safely
-        const baseQty = item.perPersonQty * guests;
-        const lineTotal = Math.round(item.price * baseQty);
-        total += lineTotal;
-        addedCount++;
-        cart.push({
-          name: `${item.name} (Apna Thaal — ${guests} log)`,
-          cook: cookObj.cook,
-          meta: `~${baseQty % 1 === 0 ? baseQty : baseQty.toFixed(1)} ${unitLabel(item.unit)} × ₹${item.price}/${item.unit}`,
-          total: lineTotal,
+      try{
+        if(selectedComboKeys.size === 0){
+          showToast("Pehle kam se kam ek item chuno");
+          return;
+        }
+        const guests = parseInt(document.getElementById("comboGuests").value) || 0;
+        let total = 0;
+        let addedCount = 0;
+        // One cart entry per dish (with its real cook) — not one combined entry —
+        // so each cook's items can later be split into their own order ticket.
+        Array.from(selectedComboKeys).forEach(key => {
+          const { cookObj, item } = itemFromKey(key);
+          if(!cookObj || !item) return; // dish was removed since selection — skip safely
+          const baseQty = item.perPersonQty * guests;
+          const lineTotal = Math.round(item.price * baseQty);
+          total += lineTotal;
+          addedCount++;
+          cart.push({
+            name: `${item.name} (Apna Thaal — ${guests} log)`,
+            cook: cookObj.cook,
+            meta: `~${baseQty % 1 === 0 ? baseQty : baseQty.toFixed(1)} ${unitLabel(item.unit)} × ₹${item.price}/${item.unit}`,
+            total: lineTotal,
+          });
         });
-      });
-      if(addedCount === 0){
-        showToast("Ye dishes ab available nahi hain — dobara select karo");
-        return;
+        if(addedCount === 0){
+          showToast("Ye dishes ab available nahi hain — dobara select karo");
+          return;
+        }
+        // Cart bar + confirmation update FIRST — this is the part the customer
+        // actually needs to see. The accordion refresh below is just visual
+        // tidy-up, so it must never be able to block the cart from showing.
+        selectedComboKeys.clear();
+        updateCartBar();
+        showToast(`Apna Thaal cart mein add ho gaya — ₹${Math.round(total)}`);
+        try{ renderCookAccordion(latestMenuItems); } catch(e){ console.error("Accordion refresh failed:", e); }
+      } catch(err){
+        console.error("addComboToCart failed:", err);
+        showToast("Error: " + err.message);
       }
-      selectedComboKeys.clear();
-      renderCookAccordion(latestMenuItems);
-      updateCartBar();
-      showToast(`Apna Thaal cart mein add ho gaya — ₹${Math.round(total)}`);
     }
 
     updateComboTotal();
@@ -1927,6 +1954,7 @@
 
     function openChat(){
       document.getElementById("chatPanel").classList.add("open");
+      document.getElementById("chatBadge").style.display = "none";
       if(document.getElementById("chatBody").children.length === 0){
         appendChatMessage("bot", "Assalam-o-Alaikum! Main GharKaKhana ka assistant hun 🙂 Bataiye — kya khane ka mann hai, ya kisi occasion ke liye order karna hai?");
       }
@@ -1954,6 +1982,13 @@
         body.appendChild(row);
       }
       body.scrollTop = body.scrollHeight;
+
+      // If a bot reply arrives while the chat panel is closed (e.g. customer
+      // switched away mid-conversation), let them know there's something new.
+      if(role === "bot" && !document.getElementById("chatPanel").classList.contains("open")){
+        document.getElementById("chatBadge").style.display = "block";
+        playAlertSound();
+      }
     }
 
     function addDishFromChat(item){
@@ -2020,16 +2055,29 @@ ORDER TIMINGS: ${occasionLine || "N/A"}`;
       chatHistory.push({ role: "user", parts: [{ text: msg }] });
 
       try{
-        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${window.GEMINI_API_KEY}`, {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 20000); // never hang forever
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${window.GEMINI_API_KEY}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
           body: JSON.stringify({
             systemInstruction: { parts: [{ text: buildChatSystemPrompt() }] },
             contents: chatHistory,
           }),
         });
+        clearTimeout(timeoutId);
         const data = await res.json();
         typingEl.remove();
+
+        if(!res.ok){
+          const errMsg = data?.error?.message || `HTTP ${res.status}`;
+          chatHistory.pop(); // don't keep a failed turn in history
+          appendChatMessage("bot", `Assistant se connect nahi ho paya (${errMsg}). Thodi der mein dobara try karo.`);
+          console.error("Gemini API error:", data);
+          return;
+        }
+
         const reply = data?.candidates?.[0]?.content?.parts?.[0]?.text || "Maaf karo, samajh nahi paya. Dobara try karo?";
         chatHistory.push({ role: "model", parts: [{ text: reply }] });
 
@@ -2038,7 +2086,9 @@ ORDER TIMINGS: ${occasionLine || "N/A"}`;
         appendChatMessage("bot", reply, mentioned.slice(0, 4));
       } catch(e){
         typingEl.remove();
-        appendChatMessage("bot", "Kuch gadbad ho gayi, dobara try karo.");
+        chatHistory.pop();
+        const timedOut = e.name === "AbortError";
+        appendChatMessage("bot", timedOut ? "Jawab aane mein bahut time lag raha hai — dobara try karo." : "Kuch gadbad ho gayi, dobara try karo.");
         console.error("Gemini chat error:", e);
       }
     }
