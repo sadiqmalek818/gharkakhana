@@ -25,8 +25,8 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 <script src="firebase-config.js"></script>
-<!-- AI chat assistant (Google Gemini) — set GEMINI_API_KEY in gemini-config.js -->
-<script src="gemini-config.js"></script>
+<!-- AI chat assistant (Groq — free, no card, stable) — set GROQ_API_KEY in ai-config.js -->
+<script src="ai-config.js"></script>
 <style>
   :root{
     --charcoal:#2B1B17;
@@ -2040,8 +2040,8 @@ ORDER TIMINGS: ${occasionLine || "N/A"}`;
       const input = document.getElementById("chatInput");
       const msg = input.value.trim();
       if(!msg) return;
-      if(!window.GEMINI_CONFIGURED){
-        appendChatMessage("bot", "Assistant abhi set up nahi hua hai — GharKaKhana team ko batao ki gemini-config.js mein API key daalein.");
+      if(!window.AI_CONFIGURED){
+        appendChatMessage("bot", "Assistant abhi set up nahi hua hai — GharKaKhana team ko batao ki ai-config.js mein API key daalein.");
         input.value = "";
         return;
       }
@@ -2055,18 +2055,21 @@ ORDER TIMINGS: ${occasionLine || "N/A"}`;
       body.appendChild(typingEl);
       body.scrollTop = body.scrollHeight;
 
-      chatHistory.push({ role: "user", parts: [{ text: msg }] });
+      chatHistory.push({ role: "user", content: msg });
 
       try{
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 20000); // never hang forever
-        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${window.GEMINI_API_KEY}`, {
+        const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${window.GROQ_API_KEY}`,
+          },
           signal: controller.signal,
           body: JSON.stringify({
-            systemInstruction: { parts: [{ text: buildChatSystemPrompt() }] },
-            contents: chatHistory,
+            model: "llama-3.3-70b-versatile",
+            messages: [{ role: "system", content: buildChatSystemPrompt() }, ...chatHistory],
           }),
         });
         clearTimeout(timeoutId);
@@ -2077,12 +2080,12 @@ ORDER TIMINGS: ${occasionLine || "N/A"}`;
           const errMsg = data?.error?.message || `HTTP ${res.status}`;
           chatHistory.pop(); // don't keep a failed turn in history
           appendChatMessage("bot", `Assistant se connect nahi ho paya (${errMsg}). Thodi der mein dobara try karo.`);
-          console.error("Gemini API error:", data);
+          console.error("Groq API error:", data);
           return;
         }
 
-        const reply = data?.candidates?.[0]?.content?.parts?.[0]?.text || "Maaf karo, samajh nahi paya. Dobara try karo?";
-        chatHistory.push({ role: "model", parts: [{ text: reply }] });
+        const reply = data?.choices?.[0]?.message?.content || "Maaf karo, samajh nahi paya. Dobara try karo?";
+        chatHistory.push({ role: "assistant", content: reply });
 
         // Any live menu item named in the reply gets a tap-to-add chip
         const mentioned = (latestMenuItems || []).filter(i => i.status === "active" && reply.toLowerCase().includes(i.name.toLowerCase()));
