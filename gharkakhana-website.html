@@ -499,8 +499,8 @@
       </div>
 
       <div class="cta-row">
-        <button class="btn btn-primary"><i class="fa-solid fa-bag-shopping"></i>Order karo</button>
-        <button class="btn btn-secondary"><i class="fa-brands fa-whatsapp"></i>WhatsApp</button>
+        <button class="btn btn-primary" onclick="document.getElementById('menuList').scrollIntoView({behavior:'smooth'})"><i class="fa-solid fa-bag-shopping"></i>Order karo</button>
+        <button class="btn btn-secondary" onclick="openWhatsApp()"><i class="fa-brands fa-whatsapp"></i>WhatsApp</button>
       </div>
     </div>
   </div>
@@ -703,9 +703,9 @@
         <a href="javascript:void(0)" onclick="showContentModal('contact')">Contact</a>
       </div>
       <div class="foot-social">
-        <i class="fa-brands fa-whatsapp"></i>
+        <i class="fa-brands fa-whatsapp" style="cursor:pointer;" onclick="openWhatsApp()"></i>
         <i class="fa-brands fa-instagram"></i>
-        <i class="fa-solid fa-phone"></i>
+        <i class="fa-solid fa-phone" style="cursor:pointer;" onclick="showContentModal('contact')"></i>
       </div>
     </div>
   </footer>
@@ -852,7 +852,7 @@
     let siteEvents = DEFAULT_EVENTS;
     let siteLocalities = DEFAULT_LOCALITIES;
     let siteOffers = DEFAULT_OFFERS;
-    let siteContent = { about: "", privacy: "", contact: "" };
+    let siteContent = { about: "", privacy: "", contact: "", whatsapp: "" };
     // Category chips are admin-managed (Settings tab) — new categories the admin
     // adds show up here automatically, with a generic icon if none is mapped above.
     function renderCategoryChips(categories){
@@ -1083,7 +1083,7 @@
         siteUnits = (d.units && d.units.length) ? d.units : DEFAULT_UNITS;
       }, err => console.error("Catalog load failed:", err));
       db.collection("settings").doc("content").onSnapshot(doc => {
-        siteContent = doc.exists ? { about: "", privacy: "", contact: "", ...doc.data() } : { about: "", privacy: "", contact: "" };
+        siteContent = doc.exists ? { about: "", privacy: "", contact: "", whatsapp: "", ...doc.data() } : { about: "", privacy: "", contact: "", whatsapp: "" };
       }, err => console.error("Content load failed:", err));
     } else {
       renderMenuList(LOCAL_MENU_SEED);
@@ -2186,6 +2186,15 @@ ORDER TIMINGS: ${occasionLine || "N/A"}`;
         <div class="modal-actions"><button class="btn btn-ghost" style="flex:1;" onclick="closeProfile()">Band karo</button></div>
       `;
       document.getElementById("profileOverlay").classList.add("open");
+    }
+
+    function openWhatsApp(){
+      if(!siteContent.whatsapp){
+        showToast("WhatsApp number abhi set nahi hua hai");
+        return;
+      }
+      const msg = encodeURIComponent("Hi GharKaKhana! Mujhe order ke baare mein poochna tha.");
+      window.open(`https://wa.me/${siteContent.whatsapp}?text=${msg}`, "_blank");
     }
 
     function shareApp(){

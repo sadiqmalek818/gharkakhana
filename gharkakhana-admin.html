@@ -361,7 +361,7 @@
       { key: "pehle20", label: "Pehle order pe 20% OFF", sub: "Naye customers ke liye — code: GHAR20", kind: "discount", discountType: "percent", discountValue: 20, code: "GHAR20", firstOrderOnly: true, active: true },
       { key: "bulk", label: "Bulk order? Extra discount", sub: "Mangni, party, niyaz ke liye poocho", kind: "info", discountType: "percent", discountValue: 0, code: "", firstOrderOnly: false, active: true },
     ],
-    content: { about: "", privacy: "", contact: "" },
+    content: { about: "", privacy: "", contact: "", whatsapp: "" },
   };
   let currentTab = "cooks";
   let editingId = null;
@@ -453,7 +453,7 @@
       if(currentTab === "settings") renderSettings();
     }, err => showFirestoreError(err));
     db.collection("settings").doc("content").onSnapshot(doc => {
-      if(doc.exists) settings.content = { about: "", privacy: "", contact: "", ...doc.data() };
+      if(doc.exists) settings.content = { about: "", privacy: "", contact: "", whatsapp: "", ...doc.data() };
       if(currentTab === "settings") renderSettings();
     }, err => showFirestoreError(err));
   }
@@ -523,12 +523,22 @@
         </div>
         <div class="row-actions">
           ${currentTab === "cooks" ? `<div class="icon-btn" onclick="viewCookProfile('${item.id}')"><i class="fa-solid fa-id-card"></i>Profile</div>` : ""}
+          <a class="icon-btn" href="${waLink(item.phone)}" target="_blank" style="text-decoration:none; color:inherit;"><i class="fa-brands fa-whatsapp"></i>WhatsApp</a>
           <div class="icon-btn" onclick="openModal('${item.id}')"><i class="fa-solid fa-pen"></i>Edit</div>
           <div class="icon-btn" onclick="toggleStatus('${item.id}')"><i class="fa-solid fa-toggle-on"></i>${item.status === "active" ? "Deactivate" : "Activate"}</div>
           <div class="icon-btn danger" onclick="deleteEntry('${item.id}')"><i class="fa-solid fa-trash"></i>Delete</div>
         </div>
       </div>
     `).join("");
+  }
+
+  // Builds a wa.me click-to-chat link from a stored phone number (handles
+  // spaces/dashes and adds the 91 country code if it looks like a bare 10-digit
+  // Indian mobile number).
+  function waLink(phone){
+    let digits = (phone || "").replace(/[^0-9]/g, "");
+    if(digits.length === 10) digits = "91" + digits;
+    return `https://wa.me/${digits}`;
   }
 
   function renderMenuList(){
@@ -708,6 +718,10 @@
           <label>Contact</label>
           <textarea id="c_contact" rows="3" placeholder="e.g. Phone: 98765 43210, Email: ...">${settings.content.contact}</textarea>
         </div>
+        <div class="field">
+          <label>WhatsApp Business Number (country code ke saath, bina + ya space — jaise 919898535818)</label>
+          <input type="text" id="c_whatsapp" value="${settings.content.whatsapp || ""}" placeholder="e.g. 919898535818">
+        </div>
         <div class="modal-actions" style="margin-top:0;">
           <button class="btn btn-primary" style="flex:1;" onclick="saveContent()"><i class="fa-solid fa-floppy-disk"></i>Footer Save Karo</button>
         </div>
@@ -886,6 +900,7 @@
       about: document.getElementById("c_about").value.trim(),
       privacy: document.getElementById("c_privacy").value.trim(),
       contact: document.getElementById("c_contact").value.trim(),
+      whatsapp: document.getElementById("c_whatsapp").value.trim().replace(/[^0-9]/g, ""),
     };
     if(!window.FIREBASE_CONFIGURED){
       showToast("Save ho gaya (local demo, save nahi hoga)");
