@@ -2155,6 +2155,7 @@ ORDER TIMINGS: ${occasionLine || "N/A"}`;
       const modal = document.getElementById("profileModal");
       modal.innerHTML = `
         <h3>Apna Area Chuno</h3>
+        <p style="font-size:11px; color:var(--text-soft); margin-bottom:12px; line-height:1.5;">Ye sirf tumhara delivery area set karta hai — saare cooks/dishes hamesha dikhte rahenge, kyunki hum 40km tak delivery karte hain.</p>
         <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:14px;">
           ${siteLocalities.map(l => `
             <div style="border:1px solid var(--tan); border-radius:12px; padding:11px 14px; cursor:pointer; font-size:13px; font-weight:600;" onclick="selectLocality('${l.label.replace(/'/g, "\\'")}')">
