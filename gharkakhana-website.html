@@ -774,8 +774,12 @@
       if(mode === "people"){
         return PEOPLE_OPTIONS.map(p => `<option value="${p}">${p} log</option>`).join("");
       }
-      if(unit === "box"){
-        return [1, 2, 3, 4, 5, 10, 20].map(o => `<option value="${o}">${o} box (${o * PERSON_PER_BOX} person)</option>`).join("");
+      // Any unit that feeds multiple people (box, packet, or any future
+      // admin-added batch unit) gets the "(N person)" hint — driven by the
+      // unit's actual servesPeople value, not a hardcoded unit name.
+      const serves = unitServesPeople(unit);
+      if(unit !== "kg" && unit !== "piece" && unit !== "cup" && serves > 1){
+        return [1, 2, 3, 4, 5, 10, 20].map(o => `<option value="${o}">${o} ${unitLabel(unit)} (${o * serves} person)</option>`).join("");
       }
       const opts = unit === "piece" ? [10, 20, 50, 100, 200] : unit === "cup" ? [10, 20, 50, 100] : unit === "kg" ? [1, 2, 3, 4, 5, 10, 20, 50] : [1, 2, 3, 5, 10, 20, 50];
       return opts.map(o => `<option value="${o}">${o} ${unitLabel(unit)}</option>`).join("");
@@ -902,7 +906,9 @@
     }
     function firstQtyValue(unit){
       if(unit === "kg") return 1;
-      if(unit === "box") return 1;
+      // Batch units (box, packet, or any future admin-added unit that feeds
+      // multiple people) default to 1 — not 10, which is for small per-piece units.
+      if(unitServesPeople(unit) > 1) return 1;
       return 10;
     }
 

@@ -559,14 +559,13 @@
       return;
     }
 
-    const unitLabel = { kg: "/kg", piece: "/piece", cup: "/cup" };
     list.innerHTML = items.map(item => `
       <div class="card">
         <div class="card-top">
           <div class="avatar sq">${item.photoUrl ? `<img src="${item.photoUrl}">` : `<i class="fa-solid fa-utensils" style="font-size:13px;"></i>`}</div>
           <div class="info">
             <div class="name">${item.name}</div>
-            <div class="meta">${item.cook} &nbsp;•&nbsp; ₹${item.price}${unitLabel[item.unit]}</div>
+            <div class="meta">${item.cook} &nbsp;•&nbsp; ₹${item.price}${getUnitSuffix(item.unit)}</div>
           </div>
           <span class="badge ${item.status}">${item.status === "active" ? "Available" : "Paused"}</span>
         </div>
@@ -749,6 +748,16 @@
 
   function slugify(text){
     return text.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || ("item" + Date.now());
+  }
+
+  // Looks up the display suffix (e.g. "/box", "/kg") for an item's unit key
+  // from the live settings.units list — never hardcode a fixed unit set here,
+  // since admins can add new units anytime from Settings.
+  function getUnitSuffix(unitKey){
+    const unit = settings.units.find(u => u.key === unitKey);
+    if(!unit) return unitKey ? ("/" + unitKey) : ""; // fallback: still show something, never "undefined"
+    const short = unit.label.replace(/^Per\s+/i, "").split("(")[0].trim().toLowerCase();
+    return "/" + short;
   }
 
   function saveCatalog(){
