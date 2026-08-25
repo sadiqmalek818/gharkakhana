@@ -329,9 +329,9 @@
     ],
     units: [
       { key: "kg", label: "Per kg" },
-      { key: "piece", label: "Per piece" },
-      { key: "cup", label: "Per cup" },
-      { key: "box", label: "Per box (4 person)" },
+      { key: "piece", label: "Per piece", servesPeople: 1 },
+      { key: "cup", label: "Per cup", servesPeople: 1 },
+      { key: "box", label: "Per box (4 person)", servesPeople: 4 },
     ],
     occasions: [
       { key: "lunch", label: "Lunch", icon: "fa-sun", cutoffTime: "10:00" },
@@ -629,9 +629,18 @@
 
       <div class="settings-card">
         <h3><i class="fa-solid fa-scale-balanced"></i> Units</h3>
-        <p>Ye units dish ki price/quantity ke liye dropdown mein dikhenge (e.g. "Per plate").</p>
-        <div class="chip-list">
-          ${settings.units.map(u => `<div class="chip">${u.label}<i class="fa-solid fa-xmark" onclick="removeUnit('${u.key}')"></i></div>`).join("")}
+        <p>Ye units dish ki price/quantity ke liye dropdown mein dikhenge (e.g. "Per plate"). "Kitne logo ke liye" batao — jaise ek packet 3 logo ke liye, ek box 4 logo ke liye — taaki Apna Thaal mein sahi hisaab lage.</p>
+        <div id="unitRows">
+          ${settings.units.map(u => `
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+              <div class="chip" style="flex:1;">${u.label}<i class="fa-solid fa-xmark" onclick="removeUnit('${u.key}')"></i></div>
+              ${u.key === "kg" ? `<span style="font-size:10px; color:var(--text-soft); flex:0 0 auto;">g/person se hisaab</span>` : `
+              <div style="display:flex; align-items:center; gap:4px; flex:0 0 auto;">
+                <input type="number" min="1" value="${u.servesPeople || 1}" onchange="setUnitServesPeople('${u.key}', this.value)" style="width:48px; padding:8px 6px; border-radius:8px; border:1px solid var(--tan); font-size:11px; text-align:center;">
+                <span style="font-size:10px; color:var(--text-soft);">log/unit</span>
+              </div>`}
+            </div>
+          `).join("")}
         </div>
         <div class="chip-add-row">
           <input type="text" id="newUnitInput" placeholder="e.g. Per plate">
@@ -917,13 +926,19 @@
     if(!label){ showToast("Unit ka naam likho"); return; }
     const key = slugify(label);
     if(settings.units.some(u => u.key === key)){ showToast("Ye unit pehle se hai"); return; }
-    settings.units.push({ key, label });
+    settings.units.push({ key, label, servesPeople: 1 });
     saveCatalog();
   }
 
   function removeUnit(key){
     if(settings.units.length <= 1){ showToast("Kam se kam ek unit rehni chahiye"); return; }
     settings.units = settings.units.filter(u => u.key !== key);
+    saveCatalog();
+  }
+
+  function setUnitServesPeople(key, value){
+    const unit = settings.units.find(u => u.key === key);
+    if(unit) unit.servesPeople = Math.max(1, parseInt(value) || 1);
     saveCatalog();
   }
 
