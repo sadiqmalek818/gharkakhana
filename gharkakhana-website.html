@@ -1117,7 +1117,7 @@
 
       let total, peopleText;
       if(mode === "people"){
-        const baseQty = baseQtyFromPeople(unit, val, estMode);
+        const baseQty = orderQtyForUnit(unit, baseQtyFromPeople(unit, val, estMode));
         total = Math.round(price * baseQty);
         peopleText = `${val} logo ke liye (~${baseQty % 1 === 0 ? baseQty : baseQty.toFixed(1)} ${unitLabel(unit)})`;
       } else {
@@ -1146,6 +1146,16 @@
     let customerName = localStorage.getItem("gkk_customer_name") || "";
     let customerPhone = localStorage.getItem("gkk_customer_phone") || "";
     let deliveryAddress = localStorage.getItem("gkk_customer_address") || "";
+    let referralCode = localStorage.getItem("gkk_referral_code") || ""; // farmhouse/tour-operator partner code, optional
+    // A partner's QR code encodes ?ref=CODE in the URL — if present, it wins over
+    // whatever was saved before, so scanning a fresh QR always applies correctly.
+    (function applyReferralFromUrl(){
+      const urlRef = new URLSearchParams(window.location.search).get("ref");
+      if(urlRef){
+        referralCode = urlRef.trim().toUpperCase();
+        localStorage.setItem("gkk_referral_code", referralCode);
+      }
+    })();
     const UPI_ID = "gharkakhana@upi"; // replace with real UPI ID before going live
 
     function addToCart(btn){
@@ -1161,7 +1171,7 @@
 
         let meta, total;
         if(mode === "people"){
-          const baseQty = baseQtyFromPeople(unit, val, estMode);
+          const baseQty = orderQtyForUnit(unit, baseQtyFromPeople(unit, val, estMode));
           total = Math.round(price * baseQty);
           meta = `${val} log (~${baseQty % 1 === 0 ? baseQty : baseQty.toFixed(1)} ${unitLabel(unit)}) × ₹${price}/${unit}`;
         } else {
@@ -1251,6 +1261,10 @@
           <label>Phone (WhatsApp)</label>
           <input type="tel" id="f_custphone" value="${customerPhone}" placeholder="e.g. 98765 43210">
         </div>
+        <div class="field">
+          <label>Referral / Partner Code (agar farmhouse ya tour operator ne diya ho)</label>
+          <input type="text" id="f_referral" value="${referralCode}" placeholder="e.g. FARM-SHAHIBAG" style="text-transform:uppercase;">
+        </div>
         <div class="fulfil-toggle">
           <div class="fulfil-option" id="opt-pickup" onclick="selectFulfil('pickup')">
             <i class="fa-solid fa-store"></i>Cook se Pickup
@@ -1306,8 +1320,10 @@
       }
       customerName = name;
       customerPhone = phone;
+      referralCode = (document.getElementById("f_referral").value || "").trim().toUpperCase();
       localStorage.setItem("gkk_customer_name", customerName);
       localStorage.setItem("gkk_customer_phone", customerPhone);
+      if(referralCode) localStorage.setItem("gkk_referral_code", referralCode);
       if(deliveryAddress) localStorage.setItem("gkk_customer_address", deliveryAddress);
       startOrderStatusWatcher();
       if(window.Notification && Notification.permission === "default"){
@@ -1506,6 +1522,7 @@
         meal: mealLabel,
         date: orderDate,
         status: "Pending",
+        referralCode: referralCode || "",
       };
 
       if(window.FIREBASE_CONFIGURED){
@@ -1664,7 +1681,7 @@
               const key = comboKey(cookObj.cook, item.name);
               const domId = comboDomId(key);
               const isSelected = selectedComboKeys.has(key);
-              const baseQty = item.perPersonQty * guests;
+              const baseQty = orderQtyForUnit(item.unit, item.perPersonQty * guests);
               const qtyText = isSelected && guests > 0
                 ? `${guests} logo ke liye ~${baseQty % 1 === 0 ? baseQty : baseQty.toFixed(1)} ${unitLabel(item.unit)}`
                 : "Select karke total mein dekho";
@@ -1682,6 +1699,14 @@
           </div>
         </details>
       `).join("");
+    }
+
+    // Discrete units (piece, cup, box, packet, or any admin-added batch unit)
+    // can only be ordered as whole units — you can't buy 0.3 of a packet — so
+    // the guest-driven quantity always rounds UP. Only "kg" (weight) stays
+    // fractional, since you genuinely can order 3.3kg.
+    function orderQtyForUnit(unit, rawQty){
+      return unit === "kg" ? rawQty : Math.ceil(rawQty);
     }
 
     function itemFromKey(key){
@@ -1710,7 +1735,7 @@
       selectedComboKeys.forEach(key => {
         const { item } = itemFromKey(key);
         if(!item) return; // dish no longer exists — skip safely instead of crashing
-        const baseQty = item.perPersonQty * guests;
+        const baseQty = orderQtyForUnit(item.unit, item.perPersonQty * guests);
         total += item.price * baseQty;
         const qtyText = document.getElementById(`qtytext-${comboDomId(key)}`);
         if(qtyText) qtyText.textContent = `${guests} logo ke liye ~${baseQty % 1 === 0 ? baseQty : baseQty.toFixed(1)} ${unitLabel(item.unit)}`;
@@ -1741,7 +1766,7 @@
         Array.from(selectedComboKeys).forEach(key => {
           const { cookObj, item } = itemFromKey(key);
           if(!cookObj || !item) return; // dish was removed since selection — skip safely
-          const baseQty = item.perPersonQty * guests;
+          const baseQty = orderQtyForUnit(item.unit, item.perPersonQty * guests);
           const lineTotal = Math.round(item.price * baseQty);
           total += lineTotal;
           addedCount++;
