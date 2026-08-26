@@ -1075,6 +1075,11 @@
         siteOffers = (d.offers && d.offers.length) ? d.offers : DEFAULT_OFFERS;
         renderOffers(siteOffers);
         siteUnits = (d.units && d.units.length) ? d.units : DEFAULT_UNITS;
+        // Units (servesPeople values like "Per packet -> 3 log") can arrive
+        // AFTER the Thaal accordion's first render, since Firestore listeners
+        // resolve independently. Without this, the accordion stays stuck
+        // showing stale/fallback ratios forever even once the real data lands.
+        renderCookAccordion(latestMenuItems);
       }, err => console.error("Catalog load failed:", err));
       db.collection("settings").doc("content").onSnapshot(doc => {
         siteContent = doc.exists ? { about: "", privacy: "", contact: "", whatsapp: "", ...doc.data() } : { about: "", privacy: "", contact: "", whatsapp: "" };
