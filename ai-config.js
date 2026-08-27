@@ -17,5 +17,5 @@
 // free quota.
 // ---------------------------------------------------------------------------
 
-window.GROQ_API_KEY = "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";
+window.GROQ_API_KEY = "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";
 window.AI_CONFIGURED = window.GROQ_API_KEY && window.GROQ_API_KEY !== "YOUR_GROQ_API_KEY_HERE";
