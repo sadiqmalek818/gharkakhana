@@ -25,7 +25,9 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 <script src="firebase-config.js"></script>
-<!-- AI chat assistant (Groq — free, no card, stable) — set GROQ_API_KEY in ai-config.js -->
+<!-- AI chat assistant — calls our own Cloud Function (chatProxy), never Groq
+     directly, so the API key never sits in this public file. Set CHAT_API_URL
+     in ai-config.js to your deployed function's URL. -->
 <script src="ai-config.js"></script>
 <style>
   :root{
@@ -2079,7 +2081,7 @@ ORDER TIMINGS: ${occasionLine || "N/A"}`;
       const msg = input.value.trim();
       if(!msg) return;
       if(!window.AI_CONFIGURED){
-        appendChatMessage("bot", "Assistant abhi set up nahi hua hai — GharKaKhana team ko batao ki ai-config.js mein API key daalein.");
+        appendChatMessage("bot", "Assistant abhi set up nahi hua hai — GharKaKhana team ko batao ki ai-config.js mein CHAT_API_URL daalein.");
         input.value = "";
         return;
       }
@@ -2098,15 +2100,14 @@ ORDER TIMINGS: ${occasionLine || "N/A"}`;
       try{
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 20000); // never hang forever
-        const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        // Calls OUR OWN Cloud Function, never Groq directly — so the Groq API
+        // key stays on the server and is never visible in this file, GitHub,
+        // or the browser's page source.
+        const res = await fetch(window.CHAT_API_URL, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${window.GROQ_API_KEY}`,
-          },
+          headers: { "Content-Type": "application/json" },
           signal: controller.signal,
           body: JSON.stringify({
-            model: "openai/gpt-oss-20b",
             messages: [{ role: "system", content: buildChatSystemPrompt() }, ...chatHistory],
           }),
         });
@@ -2115,14 +2116,14 @@ ORDER TIMINGS: ${occasionLine || "N/A"}`;
         typingEl.remove();
 
         if(!res.ok){
-          const errMsg = data?.error?.message || `HTTP ${res.status}`;
+          const errMsg = data?.error || `HTTP ${res.status}`;
           chatHistory.pop(); // don't keep a failed turn in history
           appendChatMessage("bot", `Assistant se connect nahi ho paya (${errMsg}). Thodi der mein dobara try karo.`);
-          console.error("Groq API error:", data);
+          console.error("Chat proxy error:", data);
           return;
         }
 
-        const reply = data?.choices?.[0]?.message?.content || "Maaf karo, samajh nahi paya. Dobara try karo?";
+        const reply = data?.reply || "Maaf karo, samajh nahi paya. Dobara try karo?";
         chatHistory.push({ role: "assistant", content: reply });
 
         // Any live menu item named in the reply gets a tap-to-add chip
