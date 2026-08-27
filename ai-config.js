@@ -16,6 +16,5 @@
 // this key private (don't post it publicly); anyone with it can use your
 // free quota.
 // ---------------------------------------------------------------------------
-
-window.GROQ_API_KEY = "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";
-window.AI_CONFIGURED = window.GROQ_API_KEY && window.GROQ_API_KEY !== "YOUR_GROQ_API_KEY_HERE";
+window.CHAT_API_URL = "https://gharkakhana-kappa.vercel.app/api/chat";
+window.AI_CONFIGURED = true;
