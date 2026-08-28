@@ -375,7 +375,7 @@
     qrUrl: "",
     categories: [
       { key: "thali", label: "Thali", estimateMode: "normal" },
-      { key: "roti", label: "Roti & Mande", estimateMode: "normal" },
+      { key: "roti", label: "Roti & Mande", estimateMode: "normal", piecesPerPerson: 4 },
       { key: "nashta", label: "Nashta", estimateMode: "normal" },
       { key: "chai", label: "Chai", estimateMode: "none" },
       { key: "mithai", label: "Mithai", estimateMode: "light" },
@@ -670,16 +670,20 @@
 
       <div class="settings-card">
         <h3><i class="fa-solid fa-tags"></i> Dish Categories</h3>
-        <p>Ye categories Menu mein dish add karte waqt dropdown mein dikhengi. "Serving estimate" decide karta hai ki customer ko dish select karte waqt "~X logo ke liye" wala hisaab dikhe ya nahi (jaise Chai/Cold drink mein zaroorat nahi, Mithai mein kam matra lagti hai).</p>
+        <p>Ye categories Menu mein dish add karte waqt dropdown mein dikhengi. "Serving estimate" decide karta hai ki customer ko dish select karte waqt "~X logo ke liye" wala hisaab dikhe ya nahi (jaise Chai/Cold drink mein zaroorat nahi, Mithai mein kam matra lagti hai). "Piece/person" sirf un dishes ke liye kaam karta hai jinki unit "Per piece" hai (jaise Roti, Puri) — batao ek insaan average kitne piece khata hai, taaki "kitne logo ke liye" ka hisaab sahi lage.</p>
         <div id="categoryRows">
           ${settings.categories.map(c => `
-            <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
-              <div class="chip" style="flex:1;">${c.label}<i class="fa-solid fa-xmark" onclick="removeCategory('${c.key}')"></i></div>
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
+              <div class="chip" style="flex:1 1 auto;">${c.label}<i class="fa-solid fa-xmark" onclick="removeCategory('${c.key}')"></i></div>
               <select onchange="setCategoryEstimateMode('${c.key}', this.value)" style="flex:0 0 auto; padding:8px; border-radius:8px; border:1px solid var(--tan); font-size:11px;">
                 <option value="normal" ${(!c.estimateMode || c.estimateMode === "normal") ? "selected" : ""}>Normal estimate</option>
                 <option value="light" ${c.estimateMode === "light" ? "selected" : ""}>Halka (kam matra)</option>
                 <option value="none" ${c.estimateMode === "none" ? "selected" : ""}>Estimate nahi chahiye</option>
               </select>
+              <div style="display:flex; align-items:center; gap:4px; flex:0 0 auto;">
+                <input type="number" min="1" step="1" value="${c.piecesPerPerson || 1}" onchange="setCategoryPiecesPerPerson('${c.key}', this.value)" style="width:48px; padding:8px; border-radius:8px; border:1px solid var(--tan); font-size:11px; text-align:center;">
+                <span style="font-size:10px; color:var(--text-soft);">piece/person</span>
+              </div>
             </div>
           `).join("")}
         </div>
@@ -845,7 +849,7 @@
     if(!label){ showToast("Category ka naam likho"); return; }
     const key = slugify(label);
     if(settings.categories.some(c => c.key === key)){ showToast("Ye category pehle se hai"); return; }
-    settings.categories.push({ key, label, estimateMode: "normal" });
+    settings.categories.push({ key, label, estimateMode: "normal", piecesPerPerson: 1 });
     saveCatalog();
   }
 
@@ -858,6 +862,17 @@
   function setCategoryEstimateMode(key, mode){
     const cat = settings.categories.find(c => c.key === key);
     if(cat) cat.estimateMode = mode;
+    saveCatalog();
+  }
+
+  // How many pieces ONE person typically eats for this category (e.g. 4 roti,
+  // 2 puri) — only matters for dishes using the "piece" unit. Feeds the
+  // "kitne logo ke liye" estimate on the website, same way gramsPerPerson
+  // does for kg-based dishes.
+  function setCategoryPiecesPerPerson(key, value){
+    const cat = settings.categories.find(c => c.key === key);
+    const num = parseInt(value);
+    if(cat) cat.piecesPerPerson = (num > 0) ? num : 1;
     saveCatalog();
   }
 

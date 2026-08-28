@@ -742,17 +742,17 @@
     const PERSON_PER_BOX = 4;           // 1 box feeds ~4 people
     const PEOPLE_OPTIONS = [5, 10, 15, 20, 30, 50, 100];
 
-    function estimatePeople(unit, qty, mode){
+    function estimatePeople(unit, qty, mode, category){
       if(mode === "none") return null; // no serving estimate for this category
       const gramsPerPerson = mode === "light" ? LIGHT_GRAMS_PER_PERSON : GRAMS_PER_PERSON;
       if(unit === "kg") return Math.max(1, Math.round((qty * 1000) / gramsPerPerson));
-      return Math.max(1, Math.round(qty * unitServesPeople(unit)));
+      return Math.max(1, Math.round(qty * unitServesPeople(unit, category)));
     }
 
-    function baseQtyFromPeople(unit, guests, mode){
+    function baseQtyFromPeople(unit, guests, mode, category){
       const gramsPerPerson = mode === "light" ? LIGHT_GRAMS_PER_PERSON : GRAMS_PER_PERSON;
       if(unit === "kg") return (guests * gramsPerPerson) / 1000;
-      return guests / unitServesPeople(unit);
+      return guests / unitServesPeople(unit, category);
     }
 
     function unitLabel(unit){
@@ -765,14 +765,14 @@
       return unit; // custom unit (admin-added) — show as-is
     }
 
-    function qtyOptionsHTML(unit, mode){
+    function qtyOptionsHTML(unit, mode, category){
       if(mode === "people"){
         return PEOPLE_OPTIONS.map(p => `<option value="${p}">${p} log</option>`).join("");
       }
       // Any unit that feeds multiple people (box, packet, or any future
       // admin-added batch unit) gets the "(N person)" hint — driven by the
       // unit's actual servesPeople value, not a hardcoded unit name.
-      const serves = unitServesPeople(unit);
+      const serves = unitServesPeople(unit, category);
       if(unit !== "kg" && unit !== "piece" && unit !== "cup" && serves > 1){
         return [1, 2, 3, 4, 5, 10, 20].map(o => `<option value="${o}">${o} ${unitLabel(unit)} (${o * serves} person)</option>`).join("");
       }
@@ -899,11 +899,11 @@
         </div>
       `).join("");
     }
-    function firstQtyValue(unit){
+    function firstQtyValue(unit, category){
       if(unit === "kg") return 1;
       // Batch units (box, packet, or any future admin-added unit that feeds
       // multiple people) default to 1 — not 10, which is for small per-piece units.
-      if(unitServesPeople(unit) > 1) return 1;
+      if(unitServesPeople(unit, category) > 1) return 1;
       return 10;
     }
 
@@ -1002,10 +1002,13 @@
       const panel = document.getElementById(`orderPanel-${gi}`);
       if(!panel || !item) return;
       const estMode = categoryEstimateMode(item.category);
-      const isPercapita = item.category === "roti" && estMode !== "none";
-      const defaultQty = firstQtyValue(item.unit);
+      // Any "piece" dish (roti, puri, samosa, whatever category admin puts it
+      // in) gets the people-count toggle — not just a category literally
+      // named "roti". Piece-based dishes are naturally counted per person.
+      const isPercapita = item.unit === "piece" && estMode !== "none";
+      const defaultQty = firstQtyValue(item.unit, item.category);
       const defaultTotal = Math.round(item.price * defaultQty);
-      const peopleEst = estimatePeople(item.unit, defaultQty, estMode);
+      const peopleEst = estimatePeople(item.unit, defaultQty, estMode, item.category);
       const defaultPeopleText = peopleEst !== null ? `~${peopleEst} logo ke liye` : "";
 
       panel.dataset.price = item.price;
@@ -1014,6 +1017,7 @@
       panel.dataset.name = item.name;
       panel.dataset.cook = group.cook;
       panel.dataset.estMode = estMode;
+      panel.dataset.category = item.category || "";
 
       panel.innerHTML = `
         <div class="dish-top">
@@ -1032,7 +1036,7 @@
         </div>` : ""}
         <div class="qty-row">
           <label>Quantity</label>
-          <select class="qty-select" onchange="updateEstimate(this)">${qtyOptionsHTML(item.unit, "unit")}</select>
+          <select class="qty-select" onchange="updateEstimate(this)">${qtyOptionsHTML(item.unit, "unit", item.category)}</select>
         </div>
         <div class="estimate-row">
           ${defaultPeopleText ? `<span class="est-people"><i class="fa-solid fa-users"></i> <span class="est-people-text">${defaultPeopleText}</span></span>` : "<span></span>"}
@@ -1103,7 +1107,7 @@
       panel.querySelectorAll(".mode-btn").forEach(b => b.classList.remove("active"));
       btnEl.classList.add("active");
       const select = panel.querySelector(".qty-select");
-      select.innerHTML = qtyOptionsHTML(panel.dataset.unit, mode);
+      select.innerHTML = qtyOptionsHTML(panel.dataset.unit, mode, panel.dataset.category);
       updateEstimate(select);
     }
 
@@ -1113,16 +1117,17 @@
       const unit = panel.dataset.unit;
       const mode = panel.dataset.mode || "unit";
       const estMode = panel.dataset.estMode || "normal";
+      const category = panel.dataset.category;
       const val = parseFloat(selectEl.value);
 
       let total, peopleText;
       if(mode === "people"){
-        const baseQty = orderQtyForUnit(unit, baseQtyFromPeople(unit, val, estMode));
+        const baseQty = orderQtyForUnit(unit, baseQtyFromPeople(unit, val, estMode, category));
         total = Math.round(price * baseQty);
         peopleText = `${val} logo ke liye (~${baseQty % 1 === 0 ? baseQty : baseQty.toFixed(1)} ${unitLabel(unit)})`;
       } else {
         total = Math.round(price * val);
-        const peopleEst = estimatePeople(unit, val, estMode);
+        const peopleEst = estimatePeople(unit, val, estMode, category);
         peopleText = peopleEst !== null ? `~${peopleEst} logo ke liye` : "";
       }
 
@@ -1167,11 +1172,12 @@
         const unit = panel.dataset.unit;
         const mode = panel.dataset.mode || "unit";
         const estMode = panel.dataset.estMode || "normal";
+        const category = panel.dataset.category;
         const val = parseFloat(panel.querySelector(".qty-select").value);
 
         let meta, total;
         if(mode === "people"){
-          const baseQty = orderQtyForUnit(unit, baseQtyFromPeople(unit, val, estMode));
+          const baseQty = orderQtyForUnit(unit, baseQtyFromPeople(unit, val, estMode, category));
           total = Math.round(price * baseQty);
           meta = `${val} log (~${baseQty % 1 === 0 ? baseQty : baseQty.toFixed(1)} ${unitLabel(unit)}) × ₹${price}/${unit}`;
         } else {
@@ -1615,8 +1621,18 @@
     // Live: cook groups + per-person ratios are derived from the same admin-managed
     // menu data as the main list (GRAMS_PER_PERSON / PIECES_PER_PERSON / etc above),
     // so any cook/dish the admin adds shows up here automatically.
-    function unitServesPeople(unit){
-      if(unit === "piece") return PIECES_PER_PERSON;
+    //
+    // For "piece" dishes (roti, puri, etc.), 1 piece does NOT feed 1 person —
+    // it's the other way round: 1 person eats several pieces. So this looks up
+    // the category's admin-configured "piecesPerPerson" (e.g. 4 roti/person)
+    // and expresses it as a fraction — 1 piece serves 1/4 of a person — which
+    // keeps the same "servesPeople" math working consistently for every unit.
+    function unitServesPeople(unit, category){
+      if(unit === "piece"){
+        const cat = siteCategories.find(c => c.key === category);
+        const piecesPerPerson = (cat && cat.piecesPerPerson) || PIECES_PER_PERSON;
+        return 1 / piecesPerPerson;
+      }
       if(unit === "cup") return CUPS_PER_PERSON;
       if(unit === "box") return PERSON_PER_BOX;
       const custom = siteUnits.find(u => u.key === unit);
@@ -1627,14 +1643,15 @@
       const mode = categoryKey ? categoryEstimateMode(categoryKey) : "normal";
       const gramsPerPerson = mode === "light" ? LIGHT_GRAMS_PER_PERSON : GRAMS_PER_PERSON;
       if(unit === "kg") return gramsPerPerson / 1000;
-      return 1 / unitServesPeople(unit); // how much of this unit one person needs
+      return 1 / unitServesPeople(unit, categoryKey); // how much of this unit one person needs
     }
 
     // Human-readable serving ratio for the Apna Thaal item list — e.g. "250g/person"
-    // for kg dishes, or "1 packet → 3 log" for a custom unit that serves several people.
+    // for kg dishes, "4 pcs/person" for roti, or "1 packet → 3 log" for a
+    // custom unit that serves several people.
     function ratioText(item){
       if(item.unit === "kg") return `${Math.round(item.perPersonQty * 1000)}g/person`;
-      const serves = unitServesPeople(item.unit);
+      const serves = unitServesPeople(item.unit, item.category);
       if(serves <= 1) return `${item.perPersonQty} ${unitLabel(item.unit)}/person`;
       return `1 ${unitLabel(item.unit)} → ${serves} log`;
     }
@@ -2063,7 +2080,7 @@
     }
 
     function addDishFromChat(item){
-      const qty = firstQtyValue(item.unit);
+      const qty = firstQtyValue(item.unit, item.category);
       const total = Math.round(item.price * qty);
       cart.push({
         name: item.name,
