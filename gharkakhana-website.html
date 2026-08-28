@@ -607,7 +607,7 @@
     <div style="text-align:center; margin-bottom:16px;">
       <p class="eyebrow" style="margin-bottom:6px;">Sirf yahan milega</p>
       <h2 style="font-size:19px; color:var(--cream);">Apna Thaal Banao</h2>
-      <p style="font-size:11.5px; color:#C9B79C; margin-top:4px;">Pehle cook chuno, phir unke items chuno — quantity kitne logo ke liye hai wahi decide karegi</p>
+      <p style="font-size:11.5px; color:#C9B79C; margin-top:4px;">Starter, Main Course, Mithai — category ke hisaab se items chuno, quantity apni marzi se decide karo</p>
     </div>
 
     <div style="display:flex; align-items:center; justify-content:space-between; background:var(--card); border-radius:14px; padding:12px 14px; margin-bottom:14px;">
@@ -1648,6 +1648,9 @@
 
     function renderCookAccordion(items){
       const active = (items || []).filter(i => i.status === "active");
+
+      // cookMenus stays grouped by cook — needed for lookup (itemFromKey) and
+      // for splitting the final order per cook when adding to cart.
       const groups = [];
       const groupIndex = {};
       active.forEach(item => {
@@ -1666,19 +1669,44 @@
       groups.forEach(g => g.items.forEach(it => validKeys.add(comboKey(g.cook, it.name))));
       Array.from(selectedComboKeys).forEach(k => { if(!validKeys.has(k)) selectedComboKeys.delete(k); });
 
+      // For DISPLAY though, group the same items by dish category (Starter,
+      // Main Course, Mithai, etc.) instead of by cook — customers browse
+      // Apna Thaal course-by-course, not cook-by-cook. Cook name still shows
+      // on each dish so it's clear who's making it.
+      const catOrder = siteCategories.map(c => c.key);
+      const catLabel = {};
+      siteCategories.forEach(c => { catLabel[c.key] = c.label; });
+
+      const catGroups = [];
+      const catIndex = {};
+      active
+        .slice()
+        .sort((a, b) => catOrder.indexOf(a.category) - catOrder.indexOf(b.category))
+        .forEach(item => {
+          const catKey = item.category || "other";
+          if(!(catKey in catIndex)){
+            catIndex[catKey] = catGroups.length;
+            catGroups.push({ key: catKey, label: catLabel[catKey] || "Other", items: [] });
+          }
+          catGroups[catIndex[catKey]].items.push({
+            name: item.name, unit: item.unit, price: item.price, cook: item.cook,
+            perPersonQty: perPersonQtyFor(item.unit, item.category),
+          });
+        });
+
       const container = document.getElementById("cookAccordion");
       if(!container) return;
-      if(groups.length === 0){
+      if(catGroups.length === 0){
         container.innerHTML = `<div style="text-align:center; padding:20px 10px; color:var(--text-soft); font-size:12.5px;">Abhi koi dish available nahi hai.</div>`;
         return;
       }
       const guests = parseInt(document.getElementById("comboGuests")?.value) || 0;
-      container.innerHTML = groups.map((cookObj, ci) => `
+      container.innerHTML = catGroups.map((catObj, ci) => `
         <details class="cook-acc" ${ci === 0 ? "open" : ""}>
-          <summary>${cookPhotoMap[cookObj.cook] ? `<img class="cgh-avatar" src="${cookPhotoMap[cookObj.cook]}">` : `<i class="fa-solid fa-chef-hat"></i>`} ${cookObj.cook}</summary>
+          <summary><i class="fa-solid ${CATEGORY_ICON[catObj.key] || "fa-utensils"}"></i> ${catObj.label}</summary>
           <div class="cook-acc-body">
-            ${cookObj.items.map((item) => {
-              const key = comboKey(cookObj.cook, item.name);
+            ${catObj.items.map((item) => {
+              const key = comboKey(item.cook, item.name);
               const domId = comboDomId(key);
               const isSelected = selectedComboKeys.has(key);
               const baseQty = orderQtyForUnit(item.unit, item.perPersonQty * guests);
@@ -1690,7 +1718,7 @@
                 <div class="ci-check"><i class="fa-solid fa-check"></i></div>
                 <div class="ci-body">
                   <div class="ci-title">${item.name}</div>
-                  <div class="ci-sub">₹${item.price}/${item.unit}</div>
+                  <div class="ci-sub">${item.cook} &nbsp;•&nbsp; ₹${item.price}/${item.unit}</div>
                   <div class="ci-ratio"><i class="fa-solid fa-scale-balanced"></i> ${ratioText(item)}</div>
                   <div class="ci-sub" id="qtytext-${domId}" style="margin-top:4px;">${qtyText}</div>
                 </div>
