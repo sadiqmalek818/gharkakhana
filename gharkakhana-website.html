@@ -765,20 +765,9 @@
       return unit; // custom unit (admin-added) — show as-is
     }
 
-    function qtyOptionsHTML(unit, mode, category){
-      if(mode === "people"){
-        return PEOPLE_OPTIONS.map(p => `<option value="${p}">${p} log</option>`).join("");
-      }
-      // Any unit that feeds multiple people (box, packet, or any future
-      // admin-added batch unit) gets the "(N person)" hint — driven by the
-      // unit's actual servesPeople value, not a hardcoded unit name.
-      const serves = unitServesPeople(unit, category);
-      if(unit !== "kg" && unit !== "piece" && unit !== "cup" && serves > 1){
-        return [1, 2, 3, 4, 5, 10, 20].map(o => `<option value="${o}">${o} ${unitLabel(unit)} (${o * serves} person)</option>`).join("");
-      }
-      const opts = unit === "piece" ? [10, 20, 50, 100, 200] : unit === "cup" ? [10, 20, 50, 100] : unit === "kg" ? [1, 2, 3, 4, 5, 10, 20, 50] : [1, 2, 3, 5, 10, 20, 50];
-      return opts.map(o => `<option value="${o}">${o} ${unitLabel(unit)}</option>`).join("");
-    }
+    // NOTE: quantity is now a manual number input everywhere (order panel,
+    // Apna Thaal guest count) — no more fixed dropdown presets (10/20/50 etc.)
+    // so a customer can always order the exact amount they actually want.
 
     // ---------- Live menu (from Firestore "menu" collection) ----------
     const CATEGORY_ICON = { thali: null, roti: "fa-bread-slice", nashta: "fa-cookie-bite", chai: "fa-mug-hot", mithai: "fa-candy-cane", cake: "fa-cake-candles" };
@@ -1035,8 +1024,8 @@
           <div class="mode-btn" onclick="setOrderMode(this, 'people')">Logo ki ginti se</div>
         </div>` : ""}
         <div class="qty-row">
-          <label>Quantity</label>
-          <select class="qty-select" onchange="updateEstimate(this)">${qtyOptionsHTML(item.unit, "unit", item.category)}</select>
+          <label>Quantity (${unitLabel(item.unit)})</label>
+          <input type="number" class="qty-select" min="${item.unit === "kg" ? "0.25" : "1"}" step="${item.unit === "kg" ? "0.25" : "1"}" value="${defaultQty}" oninput="updateEstimate(this)">
         </div>
         <div class="estimate-row">
           ${defaultPeopleText ? `<span class="est-people"><i class="fa-solid fa-users"></i> <span class="est-people-text">${defaultPeopleText}</span></span>` : "<span></span>"}
@@ -1106,9 +1095,20 @@
       panel.dataset.mode = mode;
       panel.querySelectorAll(".mode-btn").forEach(b => b.classList.remove("active"));
       btnEl.classList.add("active");
-      const select = panel.querySelector(".qty-select");
-      select.innerHTML = qtyOptionsHTML(panel.dataset.unit, mode, panel.dataset.category);
-      updateEstimate(select);
+      const input = panel.querySelector(".qty-select");
+      const label = panel.querySelector(".qty-row label");
+      if(mode === "people"){
+        input.value = 10; // sensible starting guest count — customer can type any number
+        input.min = 1;
+        input.step = 1;
+        if(label) label.textContent = "Kitne log?";
+      } else {
+        input.value = firstQtyValue(panel.dataset.unit, panel.dataset.category);
+        input.min = panel.dataset.unit === "kg" ? 0.25 : 1;
+        input.step = panel.dataset.unit === "kg" ? 0.25 : 1;
+        if(label) label.textContent = `Quantity (${unitLabel(panel.dataset.unit)})`;
+      }
+      updateEstimate(input);
     }
 
     function updateEstimate(selectEl){
@@ -2079,8 +2079,18 @@
       }
     }
 
+    // Customer might have said "15 roti" in chat — never silently substitute a
+    // guessed default. Always ask, pre-filled with a sensible starting point,
+    // so what lands in the cart always matches what they actually asked for.
     function addDishFromChat(item){
-      const qty = firstQtyValue(item.unit, item.category);
+      const defaultQty = firstQtyValue(item.unit, item.category);
+      const input = prompt(`${item.name} — kitni quantity (${unitLabel(item.unit)}) chahiye?`, defaultQty);
+      if(input === null) return; // customer cancelled
+      const qty = parseFloat(input);
+      if(!qty || qty <= 0){
+        showToast("Sahi quantity daalo");
+        return;
+      }
       const total = Math.round(item.price * qty);
       cart.push({
         name: item.name,

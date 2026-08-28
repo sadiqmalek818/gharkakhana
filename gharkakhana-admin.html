@@ -306,10 +306,7 @@
       </div>
       <div class="field">
         <label>Type</label>
-        <select id="p_type">
-          <option value="farmhouse">Farmhouse</option>
-          <option value="tour_operator">Tour Operator</option>
-        </select>
+        <select id="p_type"></select>
       </div>
       <div class="field">
         <label>Area / Location</label>
@@ -386,6 +383,10 @@
       { key: "piece", label: "Per piece", servesPeople: 1 },
       { key: "cup", label: "Per cup", servesPeople: 1 },
       { key: "box", label: "Per box (4 person)", servesPeople: 4 },
+    ],
+    partnerTypes: [
+      { key: "farmhouse", label: "Farmhouse" },
+      { key: "tour_operator", label: "Tour Operator" },
     ],
     occasions: [
       { key: "lunch", label: "Lunch", icon: "fa-sun", cutoffTime: "10:00" },
@@ -503,12 +504,14 @@
         if(d.events && d.events.length) settings.events = d.events;
         if(d.localities && d.localities.length) settings.localities = d.localities;
         if(d.offers && d.offers.length) settings.offers = d.offers;
+        if(d.partnerTypes && d.partnerTypes.length) settings.partnerTypes = d.partnerTypes;
       } else {
         // First run — seed the catalog doc with the defaults above.
         db.collection("settings").doc("catalog").set({
           categories: settings.categories, units: settings.units,
           occasions: settings.occasions, events: settings.events,
           localities: settings.localities, offers: settings.offers,
+          partnerTypes: settings.partnerTypes,
         }).catch(()=>{});
       }
       if(currentTab === "settings") renderSettings();
@@ -715,6 +718,20 @@
       </div>
 
       <div class="settings-card">
+        <h3><i class="fa-solid fa-handshake"></i> Partner Types</h3>
+        <p>Ye types Partners tab mein naya partner add karte waqt dropdown mein dikhenge (jaise Farmhouse, Tour Operator). Naya type add karo, jaise "Club" ya "Event Venue".</p>
+        <div id="partnerTypeRows">
+          ${settings.partnerTypes.map(t => `
+            <div class="chip">${t.label}<i class="fa-solid fa-xmark" onclick="removePartnerType('${t.key}')"></i></div>
+          `).join("")}
+        </div>
+        <div class="chip-add-row">
+          <input type="text" id="newPartnerTypeInput" placeholder="e.g. Club">
+          <button class="btn btn-ghost btn-sm" onclick="addPartnerType()"><i class="fa-solid fa-plus"></i>Add</button>
+        </div>
+      </div>
+
+      <div class="settings-card">
         <h3><i class="fa-solid fa-calendar-day"></i> Occasions (Lunch/Dinner/Urgent waghera)</h3>
         <p>Ye customer ko order karte waqt dikhenge. Cutoff time set karo (jaise Lunch 10:00 AM tak) — khaali chodo to koi cutoff nahi lagega (Urgent jaisa).</p>
         <div class="chip-list">
@@ -837,6 +854,7 @@
       categories: settings.categories, units: settings.units,
       occasions: settings.occasions, events: settings.events,
       localities: settings.localities, offers: settings.offers,
+      partnerTypes: settings.partnerTypes,
     })
       .then(() => showToast("Update ho gaya ✓"))
       .catch(err => showToast("Error: " + err.message));
@@ -1026,6 +1044,26 @@
   function setUnitServesPeople(key, value){
     const unit = settings.units.find(u => u.key === key);
     if(unit) unit.servesPeople = Math.max(1, parseInt(value) || 1);
+    saveCatalog();
+  }
+
+  function addPartnerType(){
+    const input = document.getElementById("newPartnerTypeInput");
+    const label = input.value.trim();
+    if(!label){ showToast("Type ka naam likho"); return; }
+    const key = slugify(label);
+    if(settings.partnerTypes.some(t => t.key === key)){ showToast("Ye type pehle se hai"); return; }
+    settings.partnerTypes.push({ key, label });
+    saveCatalog();
+  }
+
+  function removePartnerType(key){
+    if(settings.partnerTypes.length <= 1){ showToast("Kam se kam ek type rehni chahiye"); return; }
+    // Existing partners already saved with this type keep their old label
+    // stored as-is (partnerTypeLabel below reads settings.partnerTypes live,
+    // falling back to the raw key if the type was later removed) — nothing
+    // breaks for them, only the dropdown stops offering this type for new ones.
+    settings.partnerTypes = settings.partnerTypes.filter(t => t.key !== key);
     saveCatalog();
   }
 
@@ -1299,8 +1337,9 @@
     document.getElementById("partnerForm").style.display = "block";
 
     editingId = id;
+    document.getElementById("p_type").innerHTML = settings.partnerTypes.map(t => `<option value="${t.key}">${t.label}</option>`).join("");
     document.getElementById("p_name").value = "";
-    document.getElementById("p_type").value = "farmhouse";
+    document.getElementById("p_type").value = settings.partnerTypes[0]?.key || "farmhouse";
     document.getElementById("p_area").value = "";
     document.getElementById("p_phone").value = "";
     document.getElementById("p_code").value = "";
@@ -1317,7 +1356,7 @@
       const item = data.partners.find(i => i.id === id);
       document.getElementById("modalTitle").textContent = `${item.name} ko Edit Karo`;
       document.getElementById("p_name").value = item.name;
-      document.getElementById("p_type").value = item.type || "farmhouse";
+      document.getElementById("p_type").value = item.type || settings.partnerTypes[0]?.key || "farmhouse";
       document.getElementById("p_area").value = item.area || "";
       document.getElementById("p_phone").value = item.phone || "";
       document.getElementById("p_code").value = item.referralCode || "";
@@ -1457,7 +1496,11 @@
   // it doesn't collide with any existing partner's code.
   function generatePartnerCode(){
     const type = document.getElementById("p_type").value;
-    const prefix = type === "tour_operator" ? "TOUR" : "FARM";
+    // Prefix comes from whatever type the admin picked (e.g. "Club" -> "CLUB"),
+    // so this keeps working for any type added later — not just the two
+    // originally built in.
+    const typeObj = settings.partnerTypes.find(t => t.key === type);
+    const prefix = slugify(typeObj ? typeObj.label : type).toUpperCase().slice(0, 6) || "PTNR";
     let code;
     do {
       code = `${prefix}-${Math.floor(1000 + Math.random() * 9000)}`;
@@ -1562,7 +1605,11 @@
       const { orderCount, totalSales, commissionEarned } = partnerEarnings(item);
       const settled = item.totalSettled || 0;
       const pending = Math.max(0, commissionEarned - settled);
-      const typeLabel = item.type === "tour_operator" ? "Tour Operator" : "Farmhouse";
+      // Look up the live label from Settings > Partner Types — falls back to
+      // the raw stored type if that type was later removed/renamed, so old
+      // partners never show blank.
+      const typeObj = settings.partnerTypes.find(t => t.key === item.type);
+      const typeLabel = typeObj ? typeObj.label : (item.type || "Partner");
       return `
       <div class="card">
         <div class="card-top">
