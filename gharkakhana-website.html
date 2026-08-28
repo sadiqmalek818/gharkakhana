@@ -285,14 +285,14 @@
     letter-spacing:0.01em;
   }
   .qty-row{
-    display:flex; align-items:center; justify-content:space-between;
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
     margin-top:10px; padding-top:10px; border-top:1px dashed var(--tan);
   }
-  .qty-row label{font-size:11px; font-weight:600; color:var(--text-muted);}
+  .qty-row label{font-size:11px; font-weight:600; color:var(--text-muted); flex:1 1 auto; min-width:0;}
   .qty-select{
     padding:6px 10px; border-radius:8px; border:1px solid var(--tan);
     font-size:12px; font-weight:600; background:var(--cream); color:var(--charcoal);
-    font-family:'Inter',sans-serif;
+    font-family:'Inter',sans-serif; width:80px; flex:0 0 auto; text-align:right;
   }
   .estimate-row{
     display:flex; align-items:center; justify-content:space-between;
@@ -1118,7 +1118,9 @@
       const mode = panel.dataset.mode || "unit";
       const estMode = panel.dataset.estMode || "normal";
       const category = panel.dataset.category;
-      const val = parseFloat(selectEl.value);
+      // Guard against an empty/cleared input (parseFloat("") is NaN) so the
+      // total never shows "₹NaN" while the customer is still typing.
+      const val = Math.max(0, parseFloat(selectEl.value) || 0);
 
       let total, peopleText;
       if(mode === "people"){
@@ -1174,6 +1176,13 @@
         const estMode = panel.dataset.estMode || "normal";
         const category = panel.dataset.category;
         const val = parseFloat(panel.querySelector(".qty-select").value);
+
+        // Never let an empty, zero, or invalid quantity into the cart — the
+        // customer must type a real number first.
+        if(!val || val <= 0){
+          showToast("Pehle sahi quantity daalo");
+          return;
+        }
 
         let meta, total;
         if(mode === "people"){
