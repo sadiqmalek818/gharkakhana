@@ -395,6 +395,10 @@
     background:var(--turmeric); color:var(--charcoal); font-size:11px; font-weight:700;
     padding:6px 11px; border-radius:999px; cursor:pointer; border:none;
   }
+  .chat-order-summary{
+    max-width:88%; background:white; border:1.5px solid var(--turmeric); border-radius:12px;
+    padding:10px 12px; margin-top:6px;
+  }
   .chat-input-row{
     flex:0 0 auto; display:flex; gap:8px; padding:12px 14px calc(12px + env(safe-area-inset-bottom));
     background:white; border-top:1px solid var(--tan);
@@ -2060,12 +2064,72 @@
       document.getElementById("chatPanel").classList.remove("open");
     }
 
-    function appendChatMessage(role, text, dishChips){
+    // Extracts the AI's hidden [ORDER] block into structured, cart-ready
+    // items — matching each line's dish name against the live menu (exact
+    // match, case/space-insensitive) so we always use real price/cook/unit,
+    // never whatever the AI typed.
+    function parseChatOrderBlock(reply){
+      const match = reply.match(/\[ORDER\]([\s\S]*?)\[\/ORDER\]/i);
+      if(!match) return null;
+      const active = (latestMenuItems || []).filter(i => i.status === "active");
+      const norm = s => (s || "").trim().toLowerCase();
+      const items = [];
+      match[1].split("\n").forEach(line => {
+        const parts = line.split("|").map(p => p.trim());
+        if(parts.length < 3) return;
+        const [name, qtyStr, unit] = parts;
+        const qty = parseFloat(qtyStr);
+        if(!name || !qty || qty <= 0) return;
+        const item = active.find(i => norm(i.name) === norm(name)) ||
+                     active.find(i => norm(i.name).includes(norm(name)) || norm(name).includes(norm(i.name)));
+        if(!item) return; // AI mentioned something not on the live menu — skip it, never guess
+        items.push({ item, qty, unit: unit || item.unit });
+      });
+      return items.length ? items : null;
+    }
+
+    // Adds every dish from a parsed combo in one shot, using the exact
+    // quantities the assistant suggested — no per-item popups, since the
+    // customer already saw and agreed to these numbers in the chat text.
+    function addParsedOrderToCart(orderId){
+      const items = pendingChatOrders[orderId];
+      if(!items) return;
+      items.forEach(({ item, qty }) => {
+        const total = Math.round(item.price * qty);
+        cart.push({
+          name: item.name,
+          cook: item.cook,
+          meta: `${qty} ${unitLabel(item.unit)} × ₹${item.price}/${item.unit}`,
+          total,
+        });
+      });
+      updateCartBar();
+      showToast(`${items.length} dishes cart mein add ho gaye`);
+    }
+
+    let pendingChatOrders = {}; // orderId -> parsed items, so the button click can find them later
+    let chatOrderCounter = 0;
+
+    function appendChatMessage(role, text, dishChips, parsedOrder){
       const body = document.getElementById("chatBody");
       const div = document.createElement("div");
       div.className = `chat-msg ${role}`;
       div.textContent = text;
       body.appendChild(div);
+
+      if(parsedOrder && parsedOrder.length){
+        const orderId = `co${chatOrderCounter++}`;
+        pendingChatOrders[orderId] = parsedOrder;
+        const total = parsedOrder.reduce((s, { item, qty }) => s + Math.round(item.price * qty), 0);
+        const summary = document.createElement("div");
+        summary.className = "chat-order-summary";
+        summary.innerHTML = `
+          <div style="font-size:11px; color:var(--text-soft); margin-bottom:6px;">${parsedOrder.map(({ item, qty }) => `${item.name} × ${qty} ${unitLabel(item.unit)}`).join(" • ")}</div>
+          <button class="btn btn-primary" style="width:100%;" onclick="addParsedOrderToCart('${orderId}')"><i class="fa-solid fa-cart-plus"></i> Poora combo cart mein add karo — ₹${total}</button>
+        `;
+        body.appendChild(summary);
+      }
+
       if(dishChips && dishChips.length){
         const row = document.createElement("div");
         row.className = "chat-chip-row";
@@ -2126,9 +2190,26 @@ Tumhara kaam:
 - Customer ko dishes suggest karna unki pasand/mood/occasion ke hisaab se, sirf neeche di gayi LIVE MENU list mein se
 - Menu, prices, offers, delivery areas, order timing ke sawalo ka jawab dena
 - Hinglish mein, chhota aur friendly jawab do (2-4 lines, jab tak zyada detail na maangi ho)
-- Jab dish suggest karo, uska EXACT naam bolo jaisa list mein hai (customer use tap karke cart mein add kar sakta hai)
-- Tum khud order place NAHI kar sakte — customer khud "+ dish naam" chip tap karega
+- Jab EK dish casually suggest karo, uska EXACT naam bolo jaisa list mein hai (customer use tap karke cart mein add kar sakta hai)
+- Tum khud order place NAHI kar sakte — customer khud "+ dish naam" chip tap karega, ya poore combo ke liye "Cart mein add karo" button
 - Menu se bahar ke sawaal ho to politely GharKaKhana ke topic pe wapas le aao
+
+MULTI-DISH COMBO/THAAL FORMAT (zaroori hai jab bhi customer 2+ dishes ka combo, thaal, ya poora order maange — jaise "10 logo ka thaal banao", "combo suggest karo"):
+Apna normal Hinglish jawab do, phir jawab ke BILKUL AAKHIR mein ek [ORDER]...[/ORDER] block add karo jisme har suggested dish ek line pe ho, is EXACT format mein:
+DishName | quantity | unit
+- DishName EXACT wahi ho jo LIVE MENU mein hai (case match zaroori nahi)
+- quantity sirf number ho (jaise 10, 9, 1.5) — no text
+- unit wahi ho jo us dish ka LIVE MENU mein diya hai (kg/piece/cup/etc.)
+- Is block ke andar sirf ye lines ho, koi aur text nahi
+Customer ko ye block kabhi nahi dikhta — ye sirf cart mein ek tap se sab kuch add karne ke liye hai. Single/casual dish mention (jaise "Chai peeni hai kya?") ke liye [ORDER] block ki zaroorat nahi.
+
+Example poora reply:
+"Bhai 10 logo ke liye ye combo try karo: Chicken Biryani, Roti, aur Tea — total lagbhag ₹1200 padega!
+[ORDER]
+Chicken Biryani | 10 | kg
+Roti | 20 | piece
+Tea | 10 | cup
+[/ORDER]"
 
 LIVE MENU (sirf active dishes):
 ${menuLines || "Abhi koi dish available nahi hai"}
@@ -2190,9 +2271,15 @@ ORDER TIMINGS: ${occasionLine || "N/A"}`;
         const reply = data?.reply || "Maaf karo, samajh nahi paya. Dobara try karo?";
         chatHistory.push({ role: "assistant", content: reply });
 
+        // Pull out the hidden [ORDER]...[/ORDER] block (if the AI proposed a
+        // multi-dish combo) — customer never sees this raw block, only the
+        // clean text above it plus a proper "add whole combo" button below.
+        const parsedOrder = parseChatOrderBlock(reply);
+        const visibleText = reply.replace(/\[ORDER\][\s\S]*?\[\/ORDER\]/i, "").trim();
+
         // Any live menu item named in the reply gets a tap-to-add chip
-        const mentioned = (latestMenuItems || []).filter(i => i.status === "active" && reply.toLowerCase().includes(i.name.toLowerCase()));
-        appendChatMessage("bot", reply, mentioned.slice(0, 4));
+        const mentioned = (latestMenuItems || []).filter(i => i.status === "active" && visibleText.toLowerCase().includes(i.name.toLowerCase()));
+        appendChatMessage("bot", visibleText, mentioned.slice(0, 4), parsedOrder);
       } catch(e){
         typingEl.remove();
         chatHistory.pop();
