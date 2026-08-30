@@ -676,16 +676,25 @@
         <p>Ye categories Menu mein dish add karte waqt dropdown mein dikhengi. "Serving estimate" decide karta hai ki customer ko dish select karte waqt "~X logo ke liye" wala hisaab dikhe ya nahi (jaise Chai/Cold drink mein zaroorat nahi, Mithai mein kam matra lagti hai). "Piece/person" sirf un dishes ke liye kaam karta hai jinki unit "Per piece" hai (jaise Roti, Puri) — batao ek insaan average kitne piece khata hai, taaki "kitne logo ke liye" ka hisaab sahi lage.</p>
         <div id="categoryRows">
           ${settings.categories.map(c => `
-            <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
-              <div class="chip" style="flex:1 1 auto;">${c.label}<i class="fa-solid fa-xmark" onclick="removeCategory('${c.key}')"></i></div>
-              <select onchange="setCategoryEstimateMode('${c.key}', this.value)" style="flex:0 0 auto; padding:8px; border-radius:8px; border:1px solid var(--tan); font-size:11px;">
-                <option value="normal" ${(!c.estimateMode || c.estimateMode === "normal") ? "selected" : ""}>Normal estimate</option>
-                <option value="light" ${c.estimateMode === "light" ? "selected" : ""}>Halka (kam matra)</option>
-                <option value="none" ${c.estimateMode === "none" ? "selected" : ""}>Estimate nahi chahiye</option>
-              </select>
-              <div style="display:flex; align-items:center; gap:4px; flex:0 0 auto;">
-                <input type="number" min="1" step="1" value="${c.piecesPerPerson || 1}" onchange="setCategoryPiecesPerPerson('${c.key}', this.value)" style="width:48px; padding:8px; border-radius:8px; border:1px solid var(--tan); font-size:11px; text-align:center;">
-                <span style="font-size:10px; color:var(--text-soft);">piece/person</span>
+            <div style="margin-bottom:14px; padding-bottom:12px; border-bottom:1px solid var(--tan);">
+              <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
+                <div class="chip" style="flex:1 1 auto;">${c.label}<i class="fa-solid fa-xmark" onclick="removeCategory('${c.key}')"></i></div>
+                <select onchange="setCategoryEstimateMode('${c.key}', this.value)" style="flex:0 0 auto; padding:8px; border-radius:8px; border:1px solid var(--tan); font-size:11px;">
+                  <option value="normal" ${(!c.estimateMode || c.estimateMode === "normal") ? "selected" : ""}>Normal estimate</option>
+                  <option value="light" ${c.estimateMode === "light" ? "selected" : ""}>Halka (kam matra)</option>
+                  <option value="none" ${c.estimateMode === "none" ? "selected" : ""}>Estimate nahi chahiye</option>
+                </select>
+                <div style="display:flex; align-items:center; gap:4px; flex:0 0 auto;">
+                  <input type="number" min="1" step="1" value="${c.piecesPerPerson || 1}" onchange="setCategoryPiecesPerPerson('${c.key}', this.value)" style="width:48px; padding:8px; border-radius:8px; border:1px solid var(--tan); font-size:11px; text-align:center;">
+                  <span style="font-size:10px; color:var(--text-soft);">piece/person</span>
+                </div>
+              </div>
+              <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                <span style="font-size:10px; color:var(--text-soft); flex:0 0 auto;">Iske saath suggest karo:</span>
+                ${settings.categories.filter(other => other.key !== c.key).map(other => {
+                  const active = (c.pairsWith || []).includes(other.key);
+                  return `<div class="chip" style="cursor:pointer; ${active ? "background:var(--turmeric); color:var(--charcoal);" : "opacity:0.5;"}" onclick="togglePairsWith('${c.key}', '${other.key}')">${other.label}</div>`;
+                }).join("") || `<span style="font-size:10px; color:var(--text-soft);">Pehle aur category banao</span>`}
               </div>
             </div>
           `).join("")}
@@ -891,6 +900,19 @@
     const cat = settings.categories.find(c => c.key === key);
     const num = parseInt(value);
     if(cat) cat.piecesPerPerson = (num > 0) ? num : 1;
+    saveCatalog();
+  }
+
+  // Which other categories should be suggested alongside this one on the
+  // order screen — e.g. Gravy pairs with Roti + Plain Rice, so a customer
+  // ordering a curry always sees something to eat it with.
+  function togglePairsWith(catKey, otherKey){
+    const cat = settings.categories.find(c => c.key === catKey);
+    if(!cat) return;
+    cat.pairsWith = cat.pairsWith || [];
+    const idx = cat.pairsWith.indexOf(otherKey);
+    if(idx >= 0) cat.pairsWith.splice(idx, 1);
+    else cat.pairsWith.push(otherKey);
     saveCatalog();
   }
 

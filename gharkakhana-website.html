@@ -399,6 +399,13 @@
     max-width:88%; background:white; border:1.5px solid var(--turmeric); border-radius:12px;
     padding:10px 12px; margin-top:6px;
   }
+  .pair-suggest-row{margin-top:10px; padding-top:10px; border-top:1px dashed var(--tan);}
+  .pair-suggest-label{font-size:11px; font-weight:600; color:var(--text-muted); margin-bottom:6px;}
+  .pair-suggest-chips{display:flex; flex-wrap:wrap; gap:6px;}
+  .pair-chip{
+    background:var(--cream); color:var(--charcoal); font-size:11px; font-weight:700;
+    padding:6px 11px; border-radius:999px; cursor:pointer; border:1px solid var(--tan);
+  }
   .chat-input-row{
     flex:0 0 auto; display:flex; gap:8px; padding:12px 14px calc(12px + env(safe-area-inset-bottom));
     background:white; border-top:1px solid var(--tan);
@@ -1012,6 +1019,15 @@
       panel.dataset.estMode = estMode;
       panel.dataset.category = item.category || "";
 
+      // e.g. Gravy pairs with Roti + Plain Rice (admin sets this in Settings)
+      // — so a customer ordering a curry always sees something to eat it
+      // with, instead of accidentally ordering gravy alone.
+      const catObj = siteCategories.find(c => c.key === item.category);
+      const pairKeys = (catObj && catObj.pairsWith) || [];
+      const pairItems = pairKeys.length
+        ? (latestMenuItems || []).filter(i => i.status === "active" && pairKeys.includes(i.category)).slice(0, 6)
+        : [];
+
       panel.innerHTML = `
         <div class="dish-top">
           <div>
@@ -1036,7 +1052,23 @@
           <span class="est-total">Total: <span class="est-total-amount">₹${defaultTotal}</span></span>
         </div>
         <button class="add-btn full" onclick="addToCart(this)">+ Cart mein add karo</button>
+        ${pairItems.length ? `
+        <div class="pair-suggest-row">
+          <div class="pair-suggest-label">Iske saath order karo:</div>
+          <div class="pair-suggest-chips">
+            ${pairItems.map((p, idx) => `<button class="pair-chip" data-pair-idx="${idx}">+ ${p.name}</button>`).join("")}
+          </div>
+        </div>` : ""}
       `;
+
+      // Bind pair-suggestion clicks via closures (not inline onclick+JSON) so
+      // dish names with quotes/apostrophes never break the HTML attribute.
+      if(pairItems.length){
+        panel.querySelectorAll(".pair-chip").forEach(btn => {
+          const p = pairItems[parseInt(btn.dataset.pairIdx)];
+          btn.onclick = () => quickAddDish(p);
+        });
+      }
     }
 
     let cookPhotoMap = {};
@@ -2137,7 +2169,7 @@
           const btn = document.createElement("button");
           btn.className = "chat-add-chip";
           btn.textContent = `+ ${item.name}`;
-          btn.onclick = () => addDishFromChat(item);
+          btn.onclick = () => quickAddDish(item);
           row.appendChild(btn);
         });
         body.appendChild(row);
@@ -2152,10 +2184,11 @@
       }
     }
 
-    // Customer might have said "15 roti" in chat — never silently substitute a
-    // guessed default. Always ask, pre-filled with a sensible starting point,
-    // so what lands in the cart always matches what they actually asked for.
-    function addDishFromChat(item){
+    // Customer might have said "15 roti" in chat, or this might be a quick
+    // "order this too" suggestion — never silently substitute a guessed
+    // default. Always ask, pre-filled with a sensible starting point, so what
+    // lands in the cart always matches what the customer actually wants.
+    function quickAddDish(item){
       const defaultQty = firstQtyValue(item.unit, item.category);
       const input = prompt(`${item.name} — kitni quantity (${unitLabel(item.unit)}) chahiye?`, defaultQty);
       if(input === null) return; // customer cancelled
@@ -2178,8 +2211,17 @@
     // Rebuilt fresh on every message so the AI always sees today's live menu,
     // offers, localities and order timings — not stale data from page load.
     function buildChatSystemPrompt(){
+      // Tell the AI EXACTLY how much of each dish one person needs — using the
+      // same math the website's own Apna Thaal calculator uses (piecesPerPerson,
+      // gramsPerPerson, cupsPerPerson etc.) — so its combo suggestions always
+      // match reality instead of the AI guessing its own ratio.
+      const perPersonHint = (item) => {
+        const qty = perPersonQtyFor(item.unit, item.category);
+        if(item.unit === "kg") return `~${Math.round(qty * 1000)}g/person`;
+        return `~${qty} ${unitLabel(item.unit)}/person`;
+      };
       const menuLines = (latestMenuItems || []).filter(i => i.status === "active")
-        .map(i => `- ${i.name} (${i.cook}) — ₹${i.price}/${i.unit}, category: ${i.category}`).join("\n");
+        .map(i => `- ${i.name} (${i.cook}) — ₹${i.price}/${i.unit}, category: ${i.category}, ${perPersonHint(i)}`).join("\n");
       const offerLines = (siteOffers || []).filter(o => o.active)
         .map(o => `- ${o.label}${o.code ? ` (code: ${o.code})` : ""}`).join("\n");
       const localityLine = (siteLocalities || []).map(l => l.label).join(", ");
@@ -2194,24 +2236,30 @@ Tumhara kaam:
 - Tum khud order place NAHI kar sakte — customer khud "+ dish naam" chip tap karega, ya poore combo ke liye "Cart mein add karo" button
 - Menu se bahar ke sawaal ho to politely GharKaKhana ke topic pe wapas le aao
 
+QUANTITY CALCULATION — bahut zaroori, khud se andaza kabhi mat lagao:
+- Har dish ke saamne LIVE MENU mein uska "per person" ratio diya hai (jaise "~250g/person", "~4 piece/person", "~1 cup/person") — kitne bhi guests ho, quantity hamesha isi ratio se nikalo: guests × per-person amount. Khud se koi doosra number mat socho, chahe wo "normal" lage.
+  Example: agar "Roti — ~4 piece/person" diya hai aur 15 log hain, to 15 × 4 = 60 piece hoga, na ki 30 ya 40.
+- Roti/naan/paratha jaisi cheez KABHI akela suggest mat karo — hamesha kisi gravy/curry/sabzi/thali dish ke saath pair karo jiske saath wo khayi jaye, warna customer ke liye bekar hai.
+- Agar kisi dish ka per-person ratio thoda ajeeb lage (jaise ek kg-wali snack item), tab bhi diya hua ratio hi follow karo — wahi is platform ka sahi hisaab hai.
+
 MULTI-DISH COMBO/THAAL FORMAT (zaroori hai jab bhi customer 2+ dishes ka combo, thaal, ya poora order maange — jaise "10 logo ka thaal banao", "combo suggest karo"):
 Apna normal Hinglish jawab do, phir jawab ke BILKUL AAKHIR mein ek [ORDER]...[/ORDER] block add karo jisme har suggested dish ek line pe ho, is EXACT format mein:
 DishName | quantity | unit
 - DishName EXACT wahi ho jo LIVE MENU mein hai (case match zaroori nahi)
-- quantity sirf number ho (jaise 10, 9, 1.5) — no text
+- quantity upar wale "QUANTITY CALCULATION" rule se nikala hua sahi number ho (jaise 10, 60, 1.5) — no text
 - unit wahi ho jo us dish ka LIVE MENU mein diya hai (kg/piece/cup/etc.)
 - Is block ke andar sirf ye lines ho, koi aur text nahi
 Customer ko ye block kabhi nahi dikhta — ye sirf cart mein ek tap se sab kuch add karne ke liye hai. Single/casual dish mention (jaise "Chai peeni hai kya?") ke liye [ORDER] block ki zaroorat nahi.
 
-Example poora reply:
+Example poora reply (yahan Roti ka ratio ~4 piece/person maan ke, 10 logo ke liye):
 "Bhai 10 logo ke liye ye combo try karo: Chicken Biryani, Roti, aur Tea — total lagbhag ₹1200 padega!
 [ORDER]
 Chicken Biryani | 10 | kg
-Roti | 20 | piece
+Roti | 40 | piece
 Tea | 10 | cup
 [/ORDER]"
 
-LIVE MENU (sirf active dishes):
+LIVE MENU (sirf active dishes — har dish ke saamne uska price aur per-person ratio diya hai):
 ${menuLines || "Abhi koi dish available nahi hai"}
 
 ACTIVE OFFERS:
