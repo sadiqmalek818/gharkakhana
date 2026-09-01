@@ -1019,14 +1019,35 @@
       panel.dataset.estMode = estMode;
       panel.dataset.category = item.category || "";
 
-      // e.g. Gravy pairs with Roti + Plain Rice (admin sets this in Settings)
-      // — so a customer ordering a curry always sees something to eat it
-      // with, instead of accidentally ordering gravy alone.
+      // e.g. Gravy pairs with Roti + Plain Rice (admin sets this in Settings).
+      // Symmetric on purpose: admin can toggle the pairing from EITHER
+      // category's row (Roti -> Gravy, or Gravy -> Roti) and it shows up on
+      // both sides — so Nihari shows Roti/Rice/Mande, and Biryani shows
+      // Chaas, no matter which side the admin happened to set it from.
+      const pairKeys = new Set();
       const catObj = siteCategories.find(c => c.key === item.category);
-      const pairKeys = (catObj && catObj.pairsWith) || [];
-      const pairItems = pairKeys.length
-        ? (latestMenuItems || []).filter(i => i.status === "active" && pairKeys.includes(i.category)).slice(0, 6)
+      (catObj && catObj.pairsWith || []).forEach(k => pairKeys.add(k));
+      siteCategories.forEach(other => {
+        if((other.pairsWith || []).includes(item.category)) pairKeys.add(other.key);
+      });
+      const categoryPairItems = pairKeys.size
+        ? (latestMenuItems || []).filter(i => i.status === "active" && pairKeys.has(i.category))
         : [];
+
+      // Specific-dish pairing (admin picked exact companions while editing
+      // this dish in Menu, e.g. Nahari -> Roti/Mande/Rice) — also symmetric:
+      // works whether the admin set it from Nahari's edit screen or Roti's.
+      const dishPairItems = (latestMenuItems || []).filter(i =>
+        i.status === "active" && i.id !== item.id &&
+        ((item.pairsWith || []).includes(i.id) || (i.pairsWith || []).includes(item.id))
+      );
+
+      // Specific dish picks come first (admin's precise choice), then
+      // category-wide defaults fill in the rest — deduped, capped at 6.
+      const seen = new Set();
+      const pairItems = [...dishPairItems, ...categoryPairItems]
+        .filter(i => (seen.has(i.id) ? false : (seen.add(i.id), true)))
+        .slice(0, 6);
 
       panel.innerHTML = `
         <div class="dish-top">
@@ -1059,6 +1080,7 @@
             ${pairItems.map((p, idx) => `<button class="pair-chip" data-pair-idx="${idx}">+ ${p.name}</button>`).join("")}
           </div>
         </div>` : ""}
+        <div style="font-size:9px; color:#bbb; margin-top:8px; word-break:break-all;">[debug] id=${item.id || "MISSING"} | pairsWith=${JSON.stringify(item.pairsWith || [])} | matched=${pairItems.length} | totalMenuItems=${(latestMenuItems || []).length}</div>
       `;
 
       // Bind pair-suggestion clicks via closures (not inline onclick+JSON) so
