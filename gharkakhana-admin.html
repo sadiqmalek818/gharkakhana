@@ -292,6 +292,10 @@
           <option value="inactive">Paused</option>
         </select>
       </div>
+      <div class="field">
+        <label>Iske saath order karo (optional — specific dishes suggest honge, jaise Nihari ke saath Roti/Mande/Rice)</label>
+        <div id="m_pairsWith" style="display:flex; flex-wrap:wrap; gap:6px; max-height:160px; overflow-y:auto; padding:8px; border:1px solid var(--tan); border-radius:8px;"></div>
+      </div>
       <div id="menuFormError" style="display:none; color:var(--chili); font-size:11.5px; font-weight:600; margin-bottom:8px;"></div>
       <div class="modal-actions">
         <button type="button" class="btn btn-ghost" onclick="closeModal()">Cancel</button>
@@ -421,6 +425,7 @@
   let currentTab = "cooks";
   let editingId = null;
   let pendingPhoto = { f_photo: "", f_qr: "", m_photo: "", p_qr: "" };
+  let pendingItemPairs = new Set(); // menu item ids selected as "order with" companions for the dish being added/edited
   let calViewDate = new Date(); // month currently shown in calendar
   let selectedDate = todayISO();
 
@@ -1342,6 +1347,10 @@
     document.getElementById("m_photo").value = "";
     document.getElementById("m_photoPreview").style.display = "none";
 
+    // Reset the "pairs with" selection before deciding what it should hold —
+    // either the item's already-saved companions (editing) or empty (new item).
+    pendingItemPairs = new Set();
+
     if(id){
       const item = data.menu.find(i => i.id === id);
       document.getElementById("modalTitle").textContent = `${item.name} ko Edit Karo`;
@@ -1356,9 +1365,11 @@
       document.getElementById("m_unit").value = item.unit;
       document.getElementById("m_price").value = item.price;
       document.getElementById("m_status").value = item.status;
+      pendingItemPairs = new Set(item.pairsWith || []);
     } else {
       document.getElementById("modalTitle").textContent = "Naya Item Add Karo";
     }
+    renderPairChipsForItem();
     document.getElementById("overlay").classList.add("open");
   }
 
@@ -1404,6 +1415,27 @@
       document.getElementById("modalTitle").textContent = "Naya Partner Add Karo";
     }
     document.getElementById("overlay").classList.add("open");
+  }
+
+  // Specific-dish pairing (e.g. Nahari -> Roti, Mande, Rice) — shown as
+  // toggle chips of every OTHER active-or-not menu item, so admin can pick
+  // exact companions for this one dish rather than a whole category.
+  function renderPairChipsForItem(){
+    const box = document.getElementById("m_pairsWith");
+    if(!box) return;
+    const otherItems = data.menu.filter(i => i.id !== editingId);
+    box.innerHTML = otherItems.length
+      ? otherItems.map(i => {
+          const active = pendingItemPairs.has(i.id);
+          return `<div class="chip" style="cursor:pointer; ${active ? "background:var(--turmeric); color:var(--charcoal);" : "opacity:0.5;"}" onclick="toggleItemPairChip('${i.id}')">${i.name}</div>`;
+        }).join("")
+      : `<span style="font-size:11px; color:var(--text-soft);">Pehle aur dishes add karo</span>`;
+  }
+
+  function toggleItemPairChip(id){
+    if(pendingItemPairs.has(id)) pendingItemPairs.delete(id);
+    else pendingItemPairs.add(id);
+    renderPairChipsForItem();
   }
 
   function closeModal(){
@@ -1491,7 +1523,7 @@
     }
     errorBox.style.display = "none";
 
-    const payload = { name, cook, type, category, unit, price, status, photoUrl: pendingPhoto.m_photo || "" };
+    const payload = { name, cook, type, category, unit, price, status, photoUrl: pendingPhoto.m_photo || "", pairsWith: Array.from(pendingItemPairs) };
 
     if(!window.FIREBASE_CONFIGURED){
       if(editingId){

@@ -1030,9 +1030,24 @@
       siteCategories.forEach(other => {
         if((other.pairsWith || []).includes(item.category)) pairKeys.add(other.key);
       });
-      const pairItems = pairKeys.size
-        ? (latestMenuItems || []).filter(i => i.status === "active" && pairKeys.has(i.category)).slice(0, 6)
+      const categoryPairItems = pairKeys.size
+        ? (latestMenuItems || []).filter(i => i.status === "active" && pairKeys.has(i.category))
         : [];
+
+      // Specific-dish pairing (admin picked exact companions while editing
+      // this dish in Menu, e.g. Nahari -> Roti/Mande/Rice) — also symmetric:
+      // works whether the admin set it from Nahari's edit screen or Roti's.
+      const dishPairItems = (latestMenuItems || []).filter(i =>
+        i.status === "active" && i.id !== item.id &&
+        ((item.pairsWith || []).includes(i.id) || (i.pairsWith || []).includes(item.id))
+      );
+
+      // Specific dish picks come first (admin's precise choice), then
+      // category-wide defaults fill in the rest — deduped, capped at 6.
+      const seen = new Set();
+      const pairItems = [...dishPairItems, ...categoryPairItems]
+        .filter(i => (seen.has(i.id) ? false : (seen.add(i.id), true)))
+        .slice(0, 6);
 
       panel.innerHTML = `
         <div class="dish-top">
