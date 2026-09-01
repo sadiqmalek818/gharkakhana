@@ -420,6 +420,10 @@
       { key: "pehle20", label: "Pehle order pe 20% OFF", sub: "Naye customers ke liye — code: GHAR20", kind: "discount", discountType: "percent", discountValue: 20, code: "GHAR20", firstOrderOnly: true, active: true },
       { key: "bulk", label: "Bulk order? Extra discount", sub: "Mangni, party, niyaz ke liye poocho", kind: "info", discountType: "percent", discountValue: 0, code: "", firstOrderOnly: false, active: true },
     ],
+    // Rider/delivery charge rule shown to the customer at checkout: a flat
+    // minCharge for normal-size orders, switching to perPersonRate × person
+    // count once the order is for more than perPersonThreshold people.
+    deliveryRule: { minCharge: 300, perPersonThreshold: 10, perPersonRate: 10 },
     content: { about: "", privacy: "", contact: "", whatsapp: "" },
   };
   let currentTab = "cooks";
@@ -510,13 +514,14 @@
         if(d.localities && d.localities.length) settings.localities = d.localities;
         if(d.offers && d.offers.length) settings.offers = d.offers;
         if(d.partnerTypes && d.partnerTypes.length) settings.partnerTypes = d.partnerTypes;
+        if(d.deliveryRule) settings.deliveryRule = d.deliveryRule;
       } else {
         // First run — seed the catalog doc with the defaults above.
         db.collection("settings").doc("catalog").set({
           categories: settings.categories, units: settings.units,
           occasions: settings.occasions, events: settings.events,
           localities: settings.localities, offers: settings.offers,
-          partnerTypes: settings.partnerTypes,
+          partnerTypes: settings.partnerTypes, deliveryRule: settings.deliveryRule,
         }).catch(()=>{});
       }
       if(currentTab === "settings") renderSettings();
@@ -813,6 +818,27 @@
       </div>
 
       <div class="settings-card">
+        <h3><i class="fa-solid fa-motorcycle"></i> Delivery / Rider Charge</h3>
+        <p>Customer ko checkout pe yeh charge dikhega aur bill mein bhi add hoga. Chote order (${settings.deliveryRule.perPersonThreshold} logo tak) pe flat minimum lagta hai; usse zyada logo ke order pe per-person rate se calculate hota hai.</p>
+        <div class="field">
+          <label>Minimum charge (₹) — ${settings.deliveryRule.perPersonThreshold} ya usse kam logo ke order ke liye</label>
+          <input type="number" id="dr_min" min="0" value="${settings.deliveryRule.minCharge}">
+        </div>
+        <div class="field">
+          <label>Kitne logo se zyada order ho to per-person rate lagegi</label>
+          <input type="number" id="dr_threshold" min="1" value="${settings.deliveryRule.perPersonThreshold}">
+        </div>
+        <div class="field">
+          <label>Per-person rate (₹) — threshold se zyada logo ke order ke liye</label>
+          <input type="number" id="dr_rate" min="0" value="${settings.deliveryRule.perPersonRate}">
+        </div>
+        <div class="modal-actions" style="margin-top:0;">
+          <button class="btn btn-ghost" style="flex:1;" onclick="resetDeliveryRule()">Default pe reset</button>
+          <button class="btn btn-primary" style="flex:1;" onclick="saveDeliveryRule()"><i class="fa-solid fa-floppy-disk"></i>Save Karo</button>
+        </div>
+      </div>
+
+      <div class="settings-card">
         <h3><i class="fa-solid fa-file-lines"></i> Website Footer (Hamare Baare Mein, Privacy, Contact)</h3>
         <p>Ye text customer website ke footer mein dikhega.</p>
         <div class="field">
@@ -871,11 +897,24 @@
       categories: settings.categories, units: settings.units,
       occasions: settings.occasions, events: settings.events,
       localities: settings.localities, offers: settings.offers,
-      partnerTypes: settings.partnerTypes,
+      partnerTypes: settings.partnerTypes, deliveryRule: settings.deliveryRule,
     })
       .then(() => showToast("Update ho gaya ✓"))
       .catch(err => showToast("Error: " + err.message));
     renderSettings();
+  }
+
+  function saveDeliveryRule(){
+    const minCharge = Math.max(0, parseFloat(document.getElementById("dr_min").value) || 0);
+    const threshold = Math.max(1, parseInt(document.getElementById("dr_threshold").value) || 1);
+    const perPersonRate = Math.max(0, parseFloat(document.getElementById("dr_rate").value) || 0);
+    settings.deliveryRule = { minCharge, perPersonThreshold: threshold, perPersonRate };
+    saveCatalog();
+  }
+
+  function resetDeliveryRule(){
+    settings.deliveryRule = { minCharge: 300, perPersonThreshold: 10, perPersonRate: 10 };
+    saveCatalog();
   }
 
   function addCategory(){
@@ -1254,6 +1293,7 @@
             <div class="order-meta"><i class="fa-solid ${o.type === "Pickup" ? "fa-store" : "fa-motorcycle"}"></i> ${o.type} • <i class="fa-solid ${o.meal === "Lunch" ? "fa-sun" : o.meal === "Dinner" ? "fa-moon" : o.meal === "Urgent" ? "fa-bolt" : "fa-utensils"}"></i> ${o.meal} • #${o.id}</div>
             ${o.orderGroupId ? `<div class="order-meta" style="color:var(--turmeric);"><i class="fa-solid fa-layer-group"></i> Apna Thaal combo — group #${o.orderGroupId} (alag cooks ke liye alag ticket)</div>` : ""}
             ${o.discount > 0 ? `<div class="order-meta" style="color:var(--sage);"><i class="fa-solid fa-tag"></i> ${o.offerApplied || "Offer"} — -₹${o.discount} (₹${o.subtotal} → ₹${o.total})</div>` : ""}
+            ${o.deliveryCharge > 0 ? `<div class="order-meta"><i class="fa-solid fa-motorcycle"></i> Delivery charge (${o.personCount || 1} log) — ₹${o.deliveryCharge}, bill total mein shaamil</div>` : ""}
           </div>
           <span class="badge ${o.status === "Pending" ? "inactive" : o.status === "Declined" ? "inactive" : "active"}">${o.status}</span>
         </div>

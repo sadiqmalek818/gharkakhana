@@ -847,6 +847,18 @@
     let siteLocalities = DEFAULT_LOCALITIES;
     let siteOffers = DEFAULT_OFFERS;
     let siteContent = { about: "", privacy: "", contact: "", whatsapp: "" };
+    // Rider/delivery charge rule (admin-editable in Settings > Delivery Charge):
+    // small orders pay a flat minimum; once the order is for MORE than
+    // perPersonThreshold people, the charge switches to per-person instead.
+    const DEFAULT_DELIVERY_RULE = { minCharge: 300, perPersonThreshold: 10, perPersonRate: 10 };
+    let siteDeliveryRule = DEFAULT_DELIVERY_RULE;
+    function computeDeliveryCharge(personCount){
+      const rule = siteDeliveryRule || DEFAULT_DELIVERY_RULE;
+      const count = Math.max(1, parseInt(personCount) || 1);
+      return count > rule.perPersonThreshold
+        ? Math.round(count * rule.perPersonRate)
+        : rule.minCharge;
+    }
     // Category chips are admin-managed (Settings tab) — new categories the admin
     // adds show up here automatically, with a generic icon if none is mapped above.
     function renderCategoryChips(categories){
@@ -1002,10 +1014,13 @@
       const panel = document.getElementById(`orderPanel-${gi}`);
       if(!panel || !item) return;
       const estMode = categoryEstimateMode(item.category);
-      // Any "piece" dish (roti, puri, samosa, whatever category admin puts it
-      // in) gets the people-count toggle — not just a category literally
-      // named "roti". Piece-based dishes are naturally counted per person.
-      const isPercapita = item.unit === "piece" && estMode !== "none";
+      // Person-count ordering ("Logo ki ginti se") is available for ANY unit —
+      // kg (Maande), piece (Roti), or a custom admin-added unit (Pao packet,
+      // Tandoori Chicken box, etc.) — as long as the dish's category isn't set
+      // to "Estimate nahi chahiye" (estimateMode "none", e.g. Cake/Chai) in
+      // admin Settings. The unit no longer restricts this — only the category's
+      // estimate mode does, so admin fully controls it per category.
+      const isPercapita = estMode !== "none";
       const defaultQty = firstQtyValue(item.unit, item.category);
       const defaultTotal = Math.round(item.price * defaultQty);
       const peopleEst = estimatePeople(item.unit, defaultQty, estMode, item.category);
@@ -1061,7 +1076,7 @@
         </div>
         ${isPercapita ? `
         <div class="mode-toggle">
-          <div class="mode-btn active" onclick="setOrderMode(this, 'unit')">${item.unit === "kg" ? "Kg mein order" : "Unit mein order"}</div>
+          <div class="mode-btn active" onclick="setOrderMode(this, 'unit')">${item.unit === "kg" ? "Kg mein order" : unitLabel(item.unit).charAt(0).toUpperCase() + unitLabel(item.unit).slice(1) + " mein order"}</div>
           <div class="mode-btn" onclick="setOrderMode(this, 'people')">Logo ki ginti se</div>
         </div>` : ""}
         <div class="qty-row">
@@ -1096,6 +1111,11 @@
     let latestMenuItems = LOCAL_MENU_SEED;
     let cookMenus = [];
     let selectedComboKeys = new Set();
+    // For Apna Thaal items whose category has NO auto per-person ratio (e.g.
+    // Cake — estimateMode "none"), the customer enters quantity manually
+    // instead of it being derived from guest count. Keyed by comboKey, value
+    // is the chosen quantity in that dish's own unit (kg/piece/box/etc.).
+    let manualComboQty = {};
     let paymentQrUrl = ""; // set live by admin from Settings tab; falls back to qr-code.jpg if empty
 
     if(window.FIREBASE_CONFIGURED){
@@ -1127,6 +1147,11 @@
         siteOffers = (d.offers && d.offers.length) ? d.offers : DEFAULT_OFFERS;
         renderOffers(siteOffers);
         siteUnits = (d.units && d.units.length) ? d.units : DEFAULT_UNITS;
+        siteDeliveryRule = d.deliveryRule || DEFAULT_DELIVERY_RULE;
+        // Delivery charge (shown at Payment step) depends on this rule, so if
+        // the customer is already sitting on that step when admin edits it,
+        // refresh the figure live instead of leaving a stale amount on screen.
+        if(document.getElementById("cartModal")?.querySelector(".qr-box")) renderPaymentStep();
         // Units (servesPeople values like "Per packet -> 3 log") can arrive
         // AFTER the Thaal accordion's first render, since Firestore listeners
         // resolve independently. Without this, the accordion stays stuck
@@ -1199,6 +1224,11 @@
     // In-memory only for now — connect Firebase later so orders sync to the cook & admin panels
     let cart = [];
     let fulfilment = null; // "pickup" | "delivery"
+    // How many people this order is for — used only to work out the rider's
+    // delivery charge (see computeDeliveryCharge). Defaults to whatever guest
+    // count the customer last used in Apna Thaal, since that's usually the
+    // real headcount for a bulk/party order; falls back to 1 for a normal order.
+    let orderPersonCount = 1;
     let mealType = null; // "lunch" | "dinner" | "urgent"
     function todayISO(){
       const d = new Date();
@@ -1322,6 +1352,13 @@
     }
 
     function renderFulfilStep(){
+      // If the cart has an Apna Thaal combo in it, default the delivery
+      // person-count to whatever guest number the customer already used
+      // there — that's almost always the real headcount for the order.
+      if(cart.some(i => i.name.includes("(Apna Thaal"))){
+        const guestsVal = parseInt(document.getElementById("comboGuests")?.value);
+        if(guestsVal > 0) orderPersonCount = guestsVal;
+      }
       const modal = document.getElementById("cartModal");
       modal.innerHTML = `
         <h3>Aapki details</h3>
@@ -1364,11 +1401,25 @@
           <label>Delivery address</label>
           <textarea id="f_address" rows="2" placeholder="Ghar/gali ka pura pata">${deliveryAddress}</textarea>
         </div>
+        <div class="field">
+          <label>Kitne logo ke liye order hai?</label>
+          <input type="number" id="f_personcount" min="1" step="1" value="${orderPersonCount}" oninput="updateDeliveryChargePreview(this.value)">
+          <div id="deliveryChargePreview" style="font-size:11px; color:var(--text-soft); margin-top:4px;"></div>
+        </div>
       ` : `
         <div class="field" style="font-size:12px; color:var(--text-soft);">
           <i class="fa-solid fa-circle-info"></i> Cook ke address se pickup time confirm WhatsApp pe milega.
         </div>
       `;
+      if(type === "delivery") updateDeliveryChargePreview(orderPersonCount);
+    }
+
+    // Small live hint under the "kitne log" field so the customer already
+    // knows the delivery charge before reaching Payment — no surprises later.
+    function updateDeliveryChargePreview(val){
+      orderPersonCount = Math.max(1, parseInt(val) || 1);
+      const el = document.getElementById("deliveryChargePreview");
+      if(el) el.innerHTML = `<i class="fa-solid fa-motorcycle"></i> Delivery charge: ₹${computeDeliveryCharge(orderPersonCount)}`;
     }
 
     function proceedToMealTime(){
@@ -1528,7 +1579,8 @@
       const modal = document.getElementById("cartModal");
       const subtotal = cartTotal();
       const discount = appliedOffer ? Math.min(appliedOffer.amount, subtotal) : 0;
-      const total = subtotal - discount;
+      const deliveryCharge = fulfilment === "delivery" ? computeDeliveryCharge(orderPersonCount) : 0;
+      const total = subtotal - discount + deliveryCharge;
       modal.innerHTML = `
         <h3>Payment karo</h3>
         <div class="field">
@@ -1547,6 +1599,7 @@
         <div style="border-top:1px dashed var(--tan); padding-top:10px; margin-bottom:14px;">
           <div style="display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:4px;"><span>Subtotal</span><span>₹${subtotal}</span></div>
           ${discount > 0 ? `<div style="display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:4px; color:var(--sage);"><span>Discount</span><span>-₹${discount}</span></div>` : ""}
+          ${fulfilment === "delivery" ? `<div style="display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:4px;"><span><i class="fa-solid fa-motorcycle"></i> Delivery Charge (${orderPersonCount} log)</span><span>₹${deliveryCharge}</span></div>` : ""}
           <div style="display:flex; justify-content:space-between; font-size:14.5px; font-weight:700; margin-top:6px;"><span>Total</span><span>₹${total}</span></div>
         </div>
         <div class="qr-box">
@@ -1585,6 +1638,11 @@
       const discountAmount = appliedOffer ? Math.min(appliedOffer.amount, subtotal) : 0;
       const discountRatio = subtotal > 0 ? discountAmount / subtotal : 0;
       const offerLabel = appliedOffer ? appliedOffer.label : "";
+      // Rider ka delivery charge — poore order pe EK baar lagta hai, per-cook
+      // nahi. Multi-cook split mein customer se do baar na liya jaaye isliye
+      // sirf pehle ticket ke total mein add karte hain; har ticket mein
+      // deliveryCharge field admin ko poori jaankari ke liye dikhta hai.
+      const deliveryCharge = fulfilment === "delivery" ? computeDeliveryCharge(orderPersonCount) : 0;
 
       const baseFields = {
         customer: customerName,
@@ -1595,6 +1653,8 @@
         date: orderDate,
         status: "Pending",
         referralCode: referralCode || "",
+        personCount: orderPersonCount,
+        deliveryCharge: deliveryCharge,
       };
 
       if(window.FIREBASE_CONFIGURED){
@@ -1603,6 +1663,7 @@
             const items = byCook[cookName];
             const subTotal = items.reduce((s, i) => s + i.total, 0);
             const cookDiscount = Math.round(subTotal * discountRatio);
+            const cookDeliveryCharge = idx === 0 ? deliveryCharge : 0;
             db.collection("orders").doc(`${orderId}-${idx + 1}`).set({
               ...baseFields,
               item: items.map(i => i.name).join(", "),
@@ -1611,7 +1672,7 @@
               subtotal: subTotal,
               discount: cookDiscount,
               offerApplied: offerLabel,
-              total: subTotal - cookDiscount,
+              total: subTotal - cookDiscount + cookDeliveryCharge,
               orderGroupId: orderId,
               createdAt: firebase.firestore.FieldValue.serverTimestamp(),
             }).catch(err => console.error("Order save failed:", err));
@@ -1625,7 +1686,7 @@
             subtotal: subtotal,
             discount: discountAmount,
             offerApplied: offerLabel,
-            total: subtotal - discountAmount,
+            total: subtotal - discountAmount + deliveryCharge,
             createdAt: firebase.firestore.FieldValue.serverTimestamp(),
           }).catch(err => console.error("Order save failed:", err));
         }
@@ -1653,6 +1714,7 @@
       orderDate = todayISO();
       appliedOffer = null;
       isFirstOrderCustomer = null;
+      orderPersonCount = 1;
       updateCartBar();
       closeCart();
     }
@@ -1705,8 +1767,14 @@
       return (custom && custom.servesPeople) || 1;
     }
 
+    // Returns null for categories admin marked "Estimate nahi chahiye" (e.g.
+    // Cake) — these dishes don't scale cleanly with guest count (a cake isn't
+    // "250g per person" the way a curry is), so Apna Thaal should NOT try to
+    // auto-calculate a quantity for them. Caller (renderCookAccordion) falls
+    // back to a manual quantity input for any item where this returns null.
     function perPersonQtyFor(unit, categoryKey){
       const mode = categoryKey ? categoryEstimateMode(categoryKey) : "normal";
+      if(mode === "none") return null;
       const gramsPerPerson = mode === "light" ? LIGHT_GRAMS_PER_PERSON : GRAMS_PER_PERSON;
       if(unit === "kg") return gramsPerPerson / 1000;
       return 1 / unitServesPeople(unit, categoryKey); // how much of this unit one person needs
@@ -1714,8 +1782,10 @@
 
     // Human-readable serving ratio for the Apna Thaal item list — e.g. "250g/person"
     // for kg dishes, "4 pcs/person" for roti, or "1 packet → 3 log" for a
-    // custom unit that serves several people.
+    // custom unit that serves several people. Items with no auto ratio
+    // (perPersonQty === null, e.g. Cake) show a manual-entry hint instead.
     function ratioText(item){
+      if(item.perPersonQty === null) return `Quantity khud daalo`;
       if(item.unit === "kg") return `${Math.round(item.perPersonQty * 1000)}g/person`;
       const serves = unitServesPeople(item.unit, item.category);
       if(serves <= 1) return `${item.perPersonQty} ${unitLabel(item.unit)}/person`;
@@ -1792,10 +1862,21 @@
               const key = comboKey(item.cook, item.name);
               const domId = comboDomId(key);
               const isSelected = selectedComboKeys.has(key);
-              const baseQty = orderQtyForUnit(item.unit, item.perPersonQty * guests);
-              const qtyText = isSelected && guests > 0
-                ? `${guests} logo ke liye ~${baseQty % 1 === 0 ? baseQty : baseQty.toFixed(1)} ${unitLabel(item.unit)}`
-                : "Select karke total mein dekho";
+              const isManual = item.perPersonQty === null;
+              let qtyText;
+              if(isManual){
+                // No guest-based ratio for this category (e.g. Cake) — customer
+                // types the exact quantity themselves once the item is selected.
+                const manualVal = manualComboQty[key] ?? 1;
+                qtyText = isSelected
+                  ? `<span onclick="event.stopPropagation()" style="display:inline-flex; align-items:center; gap:6px;">Quantity: <input type="number" min="${item.unit === 'kg' ? '0.25' : '1'}" step="${item.unit === 'kg' ? '0.25' : '1'}" value="${manualVal}" style="width:56px; padding:4px 6px; border-radius:6px; border:1px solid var(--tan); font-size:11px;" onchange="setManualComboQty('${key.replace(/'/g, "\\'")}', this.value)"> ${unitLabel(item.unit)}</span>`
+                  : "Select karke quantity daalo";
+              } else {
+                const baseQty = orderQtyForUnit(item.unit, item.perPersonQty * guests);
+                qtyText = isSelected && guests > 0
+                  ? `${guests} logo ke liye ~${baseQty % 1 === 0 ? baseQty : baseQty.toFixed(1)} ${unitLabel(item.unit)}`
+                  : "Select karke total mein dekho";
+              }
               return `
               <div class="combo-row ${isSelected ? "selected" : ""}" id="combo-${domId}" onclick="toggleComboItem('${key.replace(/'/g, "\\'")}')">
                 <div class="ci-check"><i class="fa-solid fa-check"></i></div>
@@ -1830,6 +1911,7 @@
     function toggleComboItem(key){
       const domId = comboDomId(key);
       const row = document.getElementById(`combo-${domId}`);
+      const { item } = itemFromKey(key);
       if(selectedComboKeys.has(key)){
         selectedComboKeys.delete(key);
         if(row) row.classList.remove("selected");
@@ -1837,6 +1919,34 @@
         selectedComboKeys.add(key);
         if(row) row.classList.add("selected");
       }
+      // Manual-quantity items (e.g. Cake) need their qty-input to appear/disappear
+      // right when selection changes — a plain text update won't do that, so
+      // rebuild just this row's qty area instead of the whole accordion (keeps
+      // other <details> sections' open/closed state untouched).
+      if(item && item.perPersonQty === null) renderManualQtyText(key);
+      updateComboTotal();
+    }
+
+    // Rebuilds only the qty-area of one manual-quantity combo row (selected →
+    // shows a small number input pre-filled with its last value or 1;
+    // unselected → shows the "select first" hint).
+    function renderManualQtyText(key){
+      const { item } = itemFromKey(key);
+      if(!item) return;
+      const qtyTextEl = document.getElementById(`qtytext-${comboDomId(key)}`);
+      if(!qtyTextEl) return;
+      const isSelected = selectedComboKeys.has(key);
+      const manualVal = manualComboQty[key] ?? 1;
+      qtyTextEl.innerHTML = isSelected
+        ? `<span onclick="event.stopPropagation()" style="display:inline-flex; align-items:center; gap:6px;">Quantity: <input type="number" min="${item.unit === "kg" ? "0.25" : "1"}" step="${item.unit === "kg" ? "0.25" : "1"}" value="${manualVal}" style="width:56px; padding:4px 6px; border-radius:6px; border:1px solid var(--tan); font-size:11px;" onchange="setManualComboQty('${key.replace(/'/g, "\\'")}', this.value)"> ${unitLabel(item.unit)}</span>`
+        : "Select karke quantity daalo";
+    }
+
+    // Customer typed a manual quantity for a "none"-estimate item (Cake etc.)
+    // inside Apna Thaal — store it and recompute the combo total.
+    function setManualComboQty(key, value){
+      const val = Math.max(0, parseFloat(value) || 0);
+      manualComboQty[key] = val || 1;
       updateComboTotal();
     }
 
@@ -1846,6 +1956,13 @@
       selectedComboKeys.forEach(key => {
         const { item } = itemFromKey(key);
         if(!item) return; // dish no longer exists — skip safely instead of crashing
+        if(item.perPersonQty === null){
+          // Manual-quantity item — its own input box is the source of truth;
+          // never overwrite it here, just fold its price into the total.
+          const manualQty = manualComboQty[key] ?? 1;
+          total += item.price * manualQty;
+          return;
+        }
         const baseQty = orderQtyForUnit(item.unit, item.perPersonQty * guests);
         total += item.price * baseQty;
         const qtyText = document.getElementById(`qtytext-${comboDomId(key)}`);
@@ -1856,7 +1973,7 @@
         const key = comboKey(cookObj.cook, item.name);
         if(!selectedComboKeys.has(key)){
           const qtyText = document.getElementById(`qtytext-${comboDomId(key)}`);
-          if(qtyText) qtyText.textContent = "Select karke total mein dekho";
+          if(qtyText) qtyText.textContent = item.perPersonQty === null ? "Select karke quantity daalo" : "Select karke total mein dekho";
         }
       }));
       document.getElementById("comboTotalDisplay").textContent = `₹${Math.round(total)}`;
@@ -1877,12 +1994,13 @@
         Array.from(selectedComboKeys).forEach(key => {
           const { cookObj, item } = itemFromKey(key);
           if(!cookObj || !item) return; // dish was removed since selection — skip safely
-          const baseQty = orderQtyForUnit(item.unit, item.perPersonQty * guests);
+          const isManual = item.perPersonQty === null;
+          const baseQty = isManual ? (manualComboQty[key] ?? 1) : orderQtyForUnit(item.unit, item.perPersonQty * guests);
           const lineTotal = Math.round(item.price * baseQty);
           total += lineTotal;
           addedCount++;
           cart.push({
-            name: `${item.name} (Apna Thaal — ${guests} log)`,
+            name: isManual ? `${item.name} (Apna Thaal)` : `${item.name} (Apna Thaal — ${guests} log)`,
             cook: cookObj.cook,
             meta: `~${baseQty % 1 === 0 ? baseQty : baseQty.toFixed(1)} ${unitLabel(item.unit)} × ₹${item.price}/${item.unit}`,
             total: lineTotal,
@@ -1896,6 +2014,7 @@
         // actually needs to see. The accordion refresh below is just visual
         // tidy-up, so it must never be able to block the cart from showing.
         selectedComboKeys.clear();
+        manualComboQty = {};
         updateCartBar();
         showToast(`Apna Thaal cart mein add ho gaya — ₹${Math.round(total)}`);
         try{ renderCookAccordion(latestMenuItems); } catch(e){ console.error("Accordion refresh failed:", e); }
