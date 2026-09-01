@@ -1080,7 +1080,6 @@
             ${pairItems.map((p, idx) => `<button class="pair-chip" data-pair-idx="${idx}">+ ${p.name}</button>`).join("")}
           </div>
         </div>` : ""}
-        <div style="font-size:9px; color:#bbb; margin-top:8px; word-break:break-all;">[debug] id=${item.id || "MISSING"} | pairsWith=${JSON.stringify(item.pairsWith || [])} | matched=${pairItems.length} | totalMenuItems=${(latestMenuItems || []).length}</div>
       `;
 
       // Bind pair-suggestion clicks via closures (not inline onclick+JSON) so
