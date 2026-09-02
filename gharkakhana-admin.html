@@ -279,7 +279,11 @@
       </div>
       <div class="field">
         <label>Unit</label>
-        <select id="m_unit"></select>
+        <select id="m_unit" onchange="toggleUnitPiecesField()"></select>
+      </div>
+      <div class="field" id="m_piecesField" style="display:none;">
+        <label>Ek insaan average kitne piece khata hai? (khaali chodo to category ki default value chalegi)</label>
+        <input type="number" id="m_piecesPerPerson" min="1" placeholder="e.g. 3">
       </div>
       <div class="field">
         <label>Price (₹)</label>
@@ -1381,6 +1385,7 @@
     document.getElementById("m_unit").value = "kg";
     document.getElementById("m_price").value = "";
     document.getElementById("m_status").value = "active";
+    document.getElementById("m_piecesPerPerson").value = "";
     document.getElementById("menuFormError").style.display = "none";
 
     pendingPhoto.m_photo = "";
@@ -1405,12 +1410,22 @@
       document.getElementById("m_unit").value = item.unit;
       document.getElementById("m_price").value = item.price;
       document.getElementById("m_status").value = item.status;
+      document.getElementById("m_piecesPerPerson").value = item.piecesPerPerson || "";
       pendingItemPairs = new Set(item.pairsWith || []);
     } else {
       document.getElementById("modalTitle").textContent = "Naya Item Add Karo";
     }
+    toggleUnitPiecesField();
     renderPairChipsForItem();
     document.getElementById("overlay").classList.add("open");
+  }
+
+  // The "kitne piece/person" override only makes sense for a "Per piece"-style
+  // dish (Roti, Puri, Samosa) — hide it for kg/box/packet/etc units so admin
+  // isn't shown a field that wouldn't do anything.
+  function toggleUnitPiecesField(){
+    const unit = document.getElementById("m_unit").value;
+    document.getElementById("m_piecesField").style.display = unit === "piece" ? "block" : "none";
   }
 
   // slugify() is defined further below — auto-suggests a referral code from
@@ -1554,6 +1569,10 @@
     const unit = document.getElementById("m_unit").value;
     const price = parseFloat(document.getElementById("m_price").value);
     const status = document.getElementById("m_status").value;
+    const piecesPerPersonRaw = document.getElementById("m_piecesPerPerson").value;
+    // 0/blank means "no override" — the customer site then falls back to the
+    // dish's category-level default (Settings > Dish Categories).
+    const piecesPerPerson = (unit === "piece" && piecesPerPersonRaw) ? Math.max(1, parseInt(piecesPerPersonRaw) || 0) : 0;
 
     const errorBox = document.getElementById("menuFormError");
     if(!name || !cook || !price || price <= 0){
@@ -1563,7 +1582,7 @@
     }
     errorBox.style.display = "none";
 
-    const payload = { name, cook, type, category, unit, price, status, photoUrl: pendingPhoto.m_photo || "", pairsWith: Array.from(pendingItemPairs) };
+    const payload = { name, cook, type, category, unit, price, status, piecesPerPerson, photoUrl: pendingPhoto.m_photo || "", pairsWith: Array.from(pendingItemPairs) };
 
     if(!window.FIREBASE_CONFIGURED){
       if(editingId){

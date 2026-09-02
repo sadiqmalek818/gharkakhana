@@ -753,17 +753,17 @@
     const PERSON_PER_BOX = 4;           // 1 box feeds ~4 people
     const PEOPLE_OPTIONS = [5, 10, 15, 20, 30, 50, 100];
 
-    function estimatePeople(unit, qty, mode, category){
+    function estimatePeople(unit, qty, mode, category, piecesPerPersonOverride){
       if(mode === "none") return null; // no serving estimate for this category
       const gramsPerPerson = mode === "light" ? LIGHT_GRAMS_PER_PERSON : GRAMS_PER_PERSON;
       if(unit === "kg") return Math.max(1, Math.round((qty * 1000) / gramsPerPerson));
-      return Math.max(1, Math.round(qty * unitServesPeople(unit, category)));
+      return Math.max(1, Math.round(qty * unitServesPeople(unit, category, piecesPerPersonOverride)));
     }
 
-    function baseQtyFromPeople(unit, guests, mode, category){
+    function baseQtyFromPeople(unit, guests, mode, category, piecesPerPersonOverride){
       const gramsPerPerson = mode === "light" ? LIGHT_GRAMS_PER_PERSON : GRAMS_PER_PERSON;
       if(unit === "kg") return (guests * gramsPerPerson) / 1000;
-      return guests / unitServesPeople(unit, category);
+      return guests / unitServesPeople(unit, category, piecesPerPersonOverride);
     }
 
     function unitLabel(unit){
@@ -781,7 +781,12 @@
     // so a customer can always order the exact amount they actually want.
 
     // ---------- Live menu (from Firestore "menu" collection) ----------
-    const CATEGORY_ICON = { thali: null, roti: "fa-bread-slice", nashta: "fa-cookie-bite", chai: "fa-mug-hot", mithai: "fa-candy-cane", cake: "fa-cake-candles" };
+    // NOTE: "roti" used to get its own bread-slice icon here, different from
+    // every other category's fork-knife icon. That inconsistency is exactly
+    // what looked like a random "shirt" symbol appearing out of nowhere —
+    // so it's removed; every category now falls back to the same fa-utensils
+    // icon unless admin specifically wants Mithai/Cake/Chai's icons below.
+    const CATEGORY_ICON = { thali: null, nashta: "fa-cookie-bite", chai: "fa-mug-hot", mithai: "fa-candy-cane", cake: "fa-cake-candles" };
     function iconForItem(item){
       if(item.category === "thali") return item.type === "nonveg" ? "fa-drumstick-bite" : "fa-leaf";
       return CATEGORY_ICON[item.category] || "fa-utensils";
@@ -1023,7 +1028,7 @@
       const isPercapita = estMode !== "none";
       const defaultQty = firstQtyValue(item.unit, item.category);
       const defaultTotal = Math.round(item.price * defaultQty);
-      const peopleEst = estimatePeople(item.unit, defaultQty, estMode, item.category);
+      const peopleEst = estimatePeople(item.unit, defaultQty, estMode, item.category, item.piecesPerPerson);
       const defaultPeopleText = peopleEst !== null ? `~${peopleEst} logo ke liye` : "";
 
       panel.dataset.price = item.price;
@@ -1033,6 +1038,10 @@
       panel.dataset.cook = group.cook;
       panel.dataset.estMode = estMode;
       panel.dataset.category = item.category || "";
+      // Per-dish override (Admin > Menu > "kitne piece/person") — takes
+      // priority over the category-wide default when this dish's serving
+      // size genuinely differs from others in the same category.
+      panel.dataset.piecesPerPerson = item.piecesPerPerson || "";
 
       // e.g. Gravy pairs with Roti + Plain Rice (admin sets this in Settings).
       // Symmetric on purpose: admin can toggle the pairing from EITHER
@@ -1200,18 +1209,19 @@
       const mode = panel.dataset.mode || "unit";
       const estMode = panel.dataset.estMode || "normal";
       const category = panel.dataset.category;
+      const piecesPerPerson = parseInt(panel.dataset.piecesPerPerson) || 0;
       // Guard against an empty/cleared input (parseFloat("") is NaN) so the
       // total never shows "₹NaN" while the customer is still typing.
       const val = Math.max(0, parseFloat(selectEl.value) || 0);
 
       let total, peopleText;
       if(mode === "people"){
-        const baseQty = orderQtyForUnit(unit, baseQtyFromPeople(unit, val, estMode, category));
+        const baseQty = orderQtyForUnit(unit, baseQtyFromPeople(unit, val, estMode, category, piecesPerPerson));
         total = Math.round(price * baseQty);
         peopleText = `${val} logo ke liye (~${baseQty % 1 === 0 ? baseQty : baseQty.toFixed(1)} ${unitLabel(unit)})`;
       } else {
         total = Math.round(price * val);
-        const peopleEst = estimatePeople(unit, val, estMode, category);
+        const peopleEst = estimatePeople(unit, val, estMode, category, piecesPerPerson);
         peopleText = peopleEst !== null ? `~${peopleEst} logo ke liye` : "";
       }
 
@@ -1262,6 +1272,7 @@
         const mode = panel.dataset.mode || "unit";
         const estMode = panel.dataset.estMode || "normal";
         const category = panel.dataset.category;
+        const piecesPerPerson = parseInt(panel.dataset.piecesPerPerson) || 0;
         const val = parseFloat(panel.querySelector(".qty-select").value);
 
         // Never let an empty, zero, or invalid quantity into the cart — the
@@ -1273,7 +1284,7 @@
 
         let meta, total;
         if(mode === "people"){
-          const baseQty = orderQtyForUnit(unit, baseQtyFromPeople(unit, val, estMode, category));
+          const baseQty = orderQtyForUnit(unit, baseQtyFromPeople(unit, val, estMode, category, piecesPerPerson));
           total = Math.round(price * baseQty);
           meta = `${val} log (~${baseQty % 1 === 0 ? baseQty : baseQty.toFixed(1)} ${unitLabel(unit)}) × ₹${price}/${unit}`;
         } else {
@@ -1755,8 +1766,15 @@
     // the category's admin-configured "piecesPerPerson" (e.g. 4 roti/person)
     // and expresses it as a fraction — 1 piece serves 1/4 of a person — which
     // keeps the same "servesPeople" math working consistently for every unit.
-    function unitServesPeople(unit, category){
+    // For "piece" dishes (roti, puri, etc.), 1 piece does NOT feed 1 person —
+    // it's the other way round: 1 person eats several pieces. dishOverride is
+    // an optional per-dish "kitne piece/person" value (Admin > Menu) that
+    // wins over the category-wide default (Admin > Settings > Dish
+    // Categories) — lets two piece-dishes in the same category (e.g. Roti
+    // and Puri both under "Main course") have different serving sizes.
+    function unitServesPeople(unit, category, dishOverride){
       if(unit === "piece"){
+        if(dishOverride) return 1 / dishOverride;
         const cat = siteCategories.find(c => c.key === category);
         const piecesPerPerson = (cat && cat.piecesPerPerson) || PIECES_PER_PERSON;
         return 1 / piecesPerPerson;
@@ -1772,12 +1790,12 @@
     // "250g per person" the way a curry is), so Apna Thaal should NOT try to
     // auto-calculate a quantity for them. Caller (renderCookAccordion) falls
     // back to a manual quantity input for any item where this returns null.
-    function perPersonQtyFor(unit, categoryKey){
+    function perPersonQtyFor(unit, categoryKey, piecesPerPersonOverride){
       const mode = categoryKey ? categoryEstimateMode(categoryKey) : "normal";
       if(mode === "none") return null;
       const gramsPerPerson = mode === "light" ? LIGHT_GRAMS_PER_PERSON : GRAMS_PER_PERSON;
       if(unit === "kg") return gramsPerPerson / 1000;
-      return 1 / unitServesPeople(unit, categoryKey); // how much of this unit one person needs
+      return 1 / unitServesPeople(unit, categoryKey, piecesPerPersonOverride); // how much of this unit one person needs
     }
 
     // Human-readable serving ratio for the Apna Thaal item list — e.g. "250g/person"
@@ -1787,7 +1805,10 @@
     function ratioText(item){
       if(item.perPersonQty === null) return `Quantity khud daalo`;
       if(item.unit === "kg") return `${Math.round(item.perPersonQty * 1000)}g/person`;
-      const serves = unitServesPeople(item.unit, item.category);
+      // item.perPersonQty already factored in any per-dish override (see
+      // perPersonQtyFor above), so derive "serves" from it directly instead
+      // of recomputing unitServesPeople without that override.
+      const serves = item.perPersonQty ? 1 / item.perPersonQty : 1;
       if(serves <= 1) return `${item.perPersonQty} ${unitLabel(item.unit)}/person`;
       return `1 ${unitLabel(item.unit)} → ${serves} log`;
     }
@@ -1812,7 +1833,8 @@
           groups.push({ cook: item.cook, items: [] });
         }
         groups[groupIndex[item.cook]].items.push({
-          name: item.name, unit: item.unit, price: item.price, perPersonQty: perPersonQtyFor(item.unit, item.category),
+          name: item.name, unit: item.unit, price: item.price, category: item.category,
+          perPersonQty: perPersonQtyFor(item.unit, item.category, item.piecesPerPerson),
         });
       });
       cookMenus = groups;
@@ -1842,8 +1864,8 @@
             catGroups.push({ key: catKey, label: catLabel[catKey] || "Other", items: [] });
           }
           catGroups[catIndex[catKey]].items.push({
-            name: item.name, unit: item.unit, price: item.price, cook: item.cook,
-            perPersonQty: perPersonQtyFor(item.unit, item.category),
+            name: item.name, unit: item.unit, price: item.price, cook: item.cook, category: item.category,
+            perPersonQty: perPersonQtyFor(item.unit, item.category, item.piecesPerPerson),
           });
         });
 
@@ -2356,7 +2378,8 @@
       // gramsPerPerson, cupsPerPerson etc.) — so its combo suggestions always
       // match reality instead of the AI guessing its own ratio.
       const perPersonHint = (item) => {
-        const qty = perPersonQtyFor(item.unit, item.category);
+        const qty = perPersonQtyFor(item.unit, item.category, item.piecesPerPerson);
+        if(qty === null) return "manual quantity (no fixed per-person ratio)";
         if(item.unit === "kg") return `~${Math.round(qty * 1000)}g/person`;
         return `~${qty} ${unitLabel(item.unit)}/person`;
       };
