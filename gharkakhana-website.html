@@ -2258,6 +2258,16 @@
       document.getElementById("chatPanel").classList.remove("open");
     }
 
+    // Rounds an AI-suggested quantity to something a home cook can actually
+    // measure/prepare — raw guests×ratio math can spit out numbers like
+    // "2.475 kg" which nobody can practically weigh out. kg rounds to the
+    // nearest quarter-kg; anything ordered as whole units (piece, cup,
+    // bottle, packet, box, etc.) must be a whole number.
+    function roundOrderQty(qty, unit){
+      if(unit === "kg") return Math.max(0.25, Math.round(qty * 4) / 4);
+      return Math.max(1, Math.round(qty));
+    }
+
     // Extracts the AI's hidden [ORDER] block into structured, cart-ready
     // items — matching each line's dish name against the live menu (exact
     // match, case/space-insensitive) so we always use real price/cook/unit,
@@ -2272,11 +2282,12 @@
         const parts = line.split("|").map(p => p.trim());
         if(parts.length < 3) return;
         const [name, qtyStr, unit] = parts;
-        const qty = parseFloat(qtyStr);
-        if(!name || !qty || qty <= 0) return;
+        const rawQty = parseFloat(qtyStr);
+        if(!name || !rawQty || rawQty <= 0) return;
         const item = active.find(i => norm(i.name) === norm(name)) ||
                      active.find(i => norm(i.name).includes(norm(name)) || norm(name).includes(norm(i.name)));
         if(!item) return; // AI mentioned something not on the live menu — skip it, never guess
+        const qty = roundOrderQty(rawQty, unit || item.unit);
         items.push({ item, qty, unit: unit || item.unit });
       });
       return items.length ? items : null;
@@ -2408,7 +2419,7 @@ QUANTITY CALCULATION — bahut zaroori, khud se andaza kabhi mat lagao:
 COMBO/THAAL BANATE WAQT — real insaan jitna khaata hai utna hi suggest karo:
 - Ek hi thaal mein DO staple/rice-base mains kabhi mat daalo (jaise Plain Rice + Biryani + Pulao ek saath) — yeh sab ek hi role fill karte hain (pet bharne wala staple), aur guest dono poori guest-count ratio se ek saath nahi kha sakta. Sirf EK staple/rice-dish chuno jab tak customer khud dono specifically na maange.
 - Realistic thaal = 1 staple (roti YA rice/biryani, dono nahi) + 1-2 gravy/curry + agar chaho to 1 starter/side + 1 drink. Budget fit karne ke liye ya "zyada dikhane" ke liye extra overlapping dishes mat thoonso.
-- Total bill batate waqt bhi check karo ki per-person cost sensible hai (₹150-300/person ek normal thaal ke liye) — agar bahut zyada ho raha hai to dish count kam karo, quantity kam mat karo (quantity hamesha per-person ratio se hi aani chahiye).
+- Total bill khud check karo (mentally) ki per-person cost sensible hai (₹150-300/person ek normal thaal ke liye) — agar bahut zyada ho raha hai to dish count kam karo, quantity kam mat karo (quantity hamesha per-person ratio se hi aani chahiye). Yeh check sirf apne liye hai — jaisa upar bataya, exact total number apne text mein kabhi mat bolo.
 
 MULTI-DISH COMBO/THAAL FORMAT (zaroori hai jab bhi customer 2+ dishes ka combo, thaal, ya poora order maange — jaise "10 logo ka thaal banao", "combo suggest karo"):
 Apna normal Hinglish jawab do, phir jawab ke BILKUL AAKHIR mein ek [ORDER]...[/ORDER] block add karo jisme har suggested dish ek line pe ho, is EXACT format mein:
@@ -2419,8 +2430,12 @@ DishName | quantity | unit
 - Is block ke andar sirf ye lines ho, koi aur text nahi
 Customer ko ye block kabhi nahi dikhta — ye sirf cart mein ek tap se sab kuch add karne ke liye hai. Single/casual dish mention (jaise "Chai peeni hai kya?") ke liye [ORDER] block ki zaroorat nahi.
 
+TOTAL PRICE — apne text mein KABHI mat likho ya calculate mat karo:
+- Jab bhi [ORDER] block ho, uske neeche customer ko EXACT sahi total apne aap ek button mein dikh jaata hai (real menu prices se calculate hota hai) — is liye apne normal Hinglish jawab mein koi bhi rupee amount ("₹1970 ka bill", "lagbhag ₹500") mat bolo, kyunki tumhara mental maths galat ho sakta hai aur button ke number se mismatch ho jayega jo customer ko confusing lagega.
+- Iske bajaye sirf dishes aur quantity bolo, phir kaho jaise "neeche button mein exact total dikh raha hai" ya "cart mein add karo, total automatically calculate ho jayega".
+
 Example poora reply (yahan Roti ka ratio ~4 piece/person maan ke, 10 logo ke liye):
-"Bhai 10 logo ke liye ye combo try karo: Chicken Biryani, Roti, aur Tea — total lagbhag ₹1200 padega!
+"Bhai 10 logo ke liye ye combo try karo: Chicken Biryani, Roti, aur Tea — neeche button mein exact total dikh jayega!
 [ORDER]
 Chicken Biryani | 10 | kg
 Roti | 40 | piece
