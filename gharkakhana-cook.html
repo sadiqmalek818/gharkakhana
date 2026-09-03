@@ -404,22 +404,54 @@
     `).join("");
   }
 
+  function todayISO(){
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  }
+
   function renderOrders(){
     // Orders sirf tab dikhte hain jab admin unhe approve kar chuka ho (status !== "Pending")
     const visibleOrders = orders.filter(o => o.status !== "Pending");
     const newCount = visibleOrders.filter(o=>o.status==="Confirmed").length;
     const cookingCount = visibleOrders.filter(o=>o.status==="Cooking").length;
+    const todayCount = visibleOrders.filter(o => o.date === todayISO()).length;
+    const advanceCount = visibleOrders.length - todayCount;
     document.getElementById("statRow").innerHTML = `
-      <div class="stat"><b>${visibleOrders.length}</b><span>Total Today</span></div>
+      <div class="stat"><b>${todayCount}</b><span>Aaj ke Orders</span></div>
       <div class="stat"><b>${newCount}</b><span>Naye Orders</span></div>
-      <div class="stat"><b>${cookingCount}</b><span>Cooking</span></div>
+      <div class="stat"><b>${advanceCount}</b><span>Advance Orders</span></div>
     `;
     const list = document.getElementById("list");
+
+    // "Reminder" banner — no push-notification server here, so this is the
+    // can't-miss-it version: shows right at the top of the Orders screen
+    // every time the cook opens the app, for anything scheduled tomorrow.
+    const today = todayISO();
+    const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowISO = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth()+1).padStart(2,"0")}-${String(tomorrow.getDate()).padStart(2,"0")}`;
+    const tomorrowOrders = visibleOrders.filter(o => o.date === tomorrowISO);
+    const reminderBanner = tomorrowOrders.length ? `
+      <div style="background:#FFF4E0; border:1px solid var(--turmeric); border-radius:12px; padding:12px 14px; margin-bottom:14px;">
+        <div style="display:flex; align-items:center; gap:8px; font-weight:700; font-size:12.5px; margin-bottom:6px;">
+          <i class="fa-solid fa-calendar-clock" style="color:var(--turmeric);"></i> Kal (${tomorrowISO}) ke ${tomorrowOrders.length} Advance Order${tomorrowOrders.length > 1 ? "s" : ""} — taiyari shuru kar do
+        </div>
+        <div style="font-size:11px; color:var(--text-soft);">${tomorrowOrders.map(o => o.item).join(" • ")}</div>
+      </div>
+    ` : "";
+
     if(visibleOrders.length === 0){
-      list.innerHTML = `<div class="empty"><i class="fa-solid fa-receipt" style="font-size:22px; margin-bottom:8px; display:block;"></i>Abhi koi order nahi hai.</div>`;
+      list.innerHTML = reminderBanner + `<div class="empty"><i class="fa-solid fa-receipt" style="font-size:22px; margin-bottom:8px; display:block;"></i>Abhi koi order nahi hai.</div>`;
       return;
     }
-    list.innerHTML = visibleOrders.map(o => `
+    // Aaj ke orders pehle, phir aage ki advance dates order se — taaki
+    // aaj ka kaam future ke saath mix ho ke confuse na kare.
+    const sortedOrders = [...visibleOrders].sort((a, b) => {
+      const aToday = a.date === today ? 0 : 1;
+      const bToday = b.date === today ? 0 : 1;
+      if(aToday !== bToday) return aToday - bToday;
+      return (a.date || "").localeCompare(b.date || "");
+    });
+    list.innerHTML = reminderBanner + sortedOrders.map(o => `
       <div class="card" style="${o.meal === 'Urgent' && o.status === 'Confirmed' ? 'border-color:var(--chili); border-width:1.5px;' : ''}">
         <div class="card-top">
           <div class="info">
@@ -427,6 +459,7 @@
               ${o.item}
               ${o.meal === "Urgent" ? '<span class="badge" style="background:var(--chili); color:white; margin-left:6px;">URGENT</span>' : ''}
             </div>
+            ${o.date !== today ? `<div style="display:inline-flex; align-items:center; gap:4px; background:#FFF4E0; color:var(--turmeric); border-radius:6px; padding:2px 7px; font-size:9.5px; font-weight:700; margin:4px 0;"><i class="fa-solid fa-calendar-clock"></i> ADVANCE ORDER — ${o.date}</div>` : ""}
             <div class="order-cust">${o.customer} • ${o.area} • <i class="fa-solid ${o.type === 'Pickup' ? 'fa-store' : 'fa-motorcycle'}"></i> ${o.type} • <i class="fa-solid ${o.meal === 'Lunch' ? 'fa-sun' : o.meal === 'Dinner' ? 'fa-moon' : o.meal === 'Urgent' ? 'fa-bolt' : 'fa-utensils'}"></i> ${o.meal} • #${o.id}</div>
           </div>
           <span class="badge ${o.status === 'Confirmed' ? 'inactive' : 'active'}">${o.status === "Confirmed" ? "Naya Order" : o.status}</span>
