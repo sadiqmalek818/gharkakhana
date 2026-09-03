@@ -1098,13 +1098,22 @@
     if(!label){ showToast("Banner text likho"); return; }
     const existingKey = document.getElementById("o_key").value;
     const kind = document.getElementById("o_kind").value;
+    const discountValue = kind === "discount" ? (parseFloat(document.getElementById("o_discountValue").value) || 0) : 0;
+    // Catches exactly the bug that slipped through before: a "Discount" kind
+    // saved with no real value ends up silently auto-applying on the
+    // customer site and showing "₹0 bacha" — confusing and pointless. If
+    // it's really just informational, "Sirf Info Banner" is the right kind.
+    if(kind === "discount" && discountValue <= 0){
+      showToast("Discount ki value 0 nahi ho sakti — ya to value bharo ya 'Sirf Info Banner' select karo");
+      return;
+    }
     const offer = {
       key: existingKey || slugify(label),
       label,
       sub: document.getElementById("o_sub").value.trim(),
       kind,
       discountType: document.getElementById("o_discountType").value,
-      discountValue: kind === "discount" ? (parseFloat(document.getElementById("o_discountValue").value) || 0) : 0,
+      discountValue,
       code: kind === "discount" ? document.getElementById("o_code").value.trim().toUpperCase() : "",
       firstOrderOnly: kind === "discount" ? document.getElementById("o_firstOrderOnly").checked : false,
       active: document.getElementById("o_active").checked,

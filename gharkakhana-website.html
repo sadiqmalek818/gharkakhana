@@ -477,12 +477,26 @@
   .coupon-chip b{font-size:12px; color:var(--chili); letter-spacing:0.3px;}
   .coupon-chip span{font-size:10.5px; color:var(--text-soft);}
   .coupon-chip-apply{font-size:9.5px; font-weight:700; color:var(--sage); white-space:nowrap;}
+  .coupon-chip-disabled{opacity:0.55; cursor:pointer;}
+  .coupon-chip-disabled .coupon-chip-apply{color:var(--text-soft);}
   .coupon-applied{
     display:flex; justify-content:space-between; align-items:center; gap:8px;
     background:#EAF4E4; border:1px solid var(--sage); border-radius:10px; padding:10px 12px; margin-bottom:12px;
+    position:relative; overflow:visible;
   }
   .coupon-applied > span:first-child{font-size:11.5px; color:var(--sage); font-weight:700;}
   .coupon-remove{font-size:10.5px; color:var(--text-soft); text-decoration:underline; cursor:pointer; white-space:nowrap;}
+  /* Coupon-applied celebration burst — small stars fly outward from center and fade */
+  .coupon-burst{position:absolute; left:50%; top:50%; width:0; height:0; pointer-events:none;}
+  .burst-star{
+    position:absolute; left:0; top:0; font-size:14px; opacity:0;
+    animation:burstFly 0.75s ease-out forwards;
+  }
+  @keyframes burstFly{
+    0%{ opacity:1; transform:translate(-50%,-50%) rotate(var(--angle)) translateX(0) scale(0.6); }
+    70%{ opacity:1; }
+    100%{ opacity:0; transform:translate(-50%,-50%) rotate(var(--angle)) translateX(var(--dist)) scale(1.1); }
+  }
   .qr-box{
     background:white; border:1px solid var(--tan); border-radius:18px; padding:20px;
     display:flex; flex-direction:column; align-items:center; margin:14px 0;
@@ -1580,6 +1594,9 @@
 
     // Auto-applies the best no-code discount the customer already qualifies for.
     // Code-based offers are only applied when the customer types the code in.
+    // A ₹0 discount is never auto-applied — that used to happen for a
+    // misconfigured admin offer (kind "discount" but value 0), which looked
+    // like a real coupon had silently activated while saving nothing.
     function autoApplyBestOffer(){
       if(appliedOffer && appliedOffer.code) return; // don't override a manually-entered code
       const subtotal = cartTotal();
@@ -1587,7 +1604,7 @@
       let best = null;
       autoOffers.forEach(o => {
         const amt = computeOfferDiscount(o, subtotal);
-        if(!best || amt > best.amount) best = { key: o.key, label: o.label, amount: amt, code: "" };
+        if(amt > 0 && (!best || amt > best.amount)) best = { key: o.key, label: o.label, amount: amt, code: "" };
       });
       appliedOffer = best;
     }
@@ -1597,14 +1614,50 @@
       const code = (codeArg || document.getElementById("couponInput")?.value || "").trim().toUpperCase();
       if(!code){ showToast("Coupon code likho"); return; }
       const subtotal = cartTotal();
-      const offer = siteOffers.find(o => offerIsEligible(o) && o.code && o.code.toUpperCase() === code);
+      const offer = siteOffers.find(o => o.code && o.code.toUpperCase() === code && o.kind === "discount" && o.active);
       if(!offer){
         showToast("Ye code valid nahi hai ya expire ho gaya hai");
         return;
       }
-      appliedOffer = { key: offer.key, label: offer.label, amount: computeOfferDiscount(offer, subtotal), code };
+      if(offer.firstOrderOnly && isFirstOrderCustomer !== true){
+        showToast("Yeh code sirf pehle order par use ho sakta hai");
+        return;
+      }
+      const amount = computeOfferDiscount(offer, subtotal);
+      if(amount <= 0){
+        showToast("Is code se abhi koi discount nahi ban raha");
+        return;
+      }
+      appliedOffer = { key: offer.key, label: offer.label, amount, code };
       renderPaymentStep();
-      showToast(`${offer.label} apply ho gaya ✓`);
+      triggerCouponBurst();
+      showToast(`🎉 ${offer.label} apply ho gaya — ₹${amount} ka discount mila!`);
+    }
+
+    // Small celebratory star-burst next to the "applied" banner — pure
+    // CSS/JS, no library needed. Purely cosmetic, safe to no-op if the
+    // banner element isn't in the DOM for some reason.
+    function triggerCouponBurst(){
+      requestAnimationFrame(() => {
+        const anchor = document.querySelector(".coupon-applied");
+        if(!anchor) return;
+        const burst = document.createElement("div");
+        burst.className = "coupon-burst";
+        const glyphs = ["⭐", "✨", "🎉", "⭐", "✨"];
+        for(let i = 0; i < 12; i++){
+          const star = document.createElement("span");
+          star.className = "burst-star";
+          star.textContent = glyphs[i % glyphs.length];
+          const angle = (360 / 12) * i + (Math.random() * 20 - 10);
+          const dist = 55 + Math.random() * 35;
+          star.style.setProperty("--angle", `${angle}deg`);
+          star.style.setProperty("--dist", `${dist}px`);
+          star.style.animationDelay = `${Math.random() * 80}ms`;
+          burst.appendChild(star);
+        }
+        anchor.appendChild(burst);
+        setTimeout(() => burst.remove(), 900);
+      });
     }
 
     function removeAppliedOffer(){
@@ -1619,10 +1672,10 @@
       const deliveryCharge = fulfilment === "delivery" ? computeDeliveryCharge(orderPersonCount) : 0;
       const total = subtotal - discount + deliveryCharge;
       const isAdvance = orderDate !== todayISO();
-      // Coupons the customer could still apply (not already applied, not
-      // auto-only, still eligible) — shown as tappable chips like
-      // Swiggy/Zomato's "View all offers" list, instead of a bare text box.
-      const availableCodedOffers = siteOffers.filter(o => offerIsEligible(o) && o.code && (!appliedOffer || appliedOffer.code !== o.code));
+      // Show every active coded offer — including ones the customer isn't
+      // eligible for right now — so nothing feels hidden. Ineligible ones
+      // are visually dimmed with the reason, instead of silently vanishing.
+      const allCodedOffers = siteOffers.filter(o => o.kind === "discount" && o.active && o.code && (!appliedOffer || appliedOffer.code !== o.code));
       modal.innerHTML = `
         <h3>Payment karo</h3>
         ${isAdvance ? `<div style="background:#FFF4E0; border:1px solid var(--turmeric); border-radius:10px; padding:9px 12px; margin-bottom:12px; font-size:11.5px; display:flex; align-items:center; gap:8px;"><i class="fa-solid fa-calendar-clock" style="color:var(--turmeric); font-size:15px;"></i><span><b>Advance Order</b> — ${new Date(orderDate + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })} ke liye</span></div>` : ""}
@@ -1632,15 +1685,17 @@
             <input type="text" id="couponInput" placeholder="Coupon code daalo" style="text-transform:uppercase;" onkeydown="if(event.key==='Enter') applyCouponCode();">
             <button class="btn btn-primary btn-sm" onclick="applyCouponCode()">Apply</button>
           </div>
-          ${availableCodedOffers.length ? `
+          ${allCodedOffers.length ? `
             <div class="coupon-suggestions">
-              ${availableCodedOffers.map(o => `
-                <div class="coupon-chip" onclick="applyCouponCode('${o.code}')">
+              ${allCodedOffers.map(o => {
+                const eligible = !o.firstOrderOnly || isFirstOrderCustomer === true;
+                return `
+                <div class="coupon-chip ${eligible ? "" : "coupon-chip-disabled"}" onclick="${eligible ? `applyCouponCode('${o.code}')` : `showToast('Yeh sirf pehle order par use ho sakta hai')`}">
                   <i class="fa-solid fa-tag"></i>
-                  <div><b>${o.code}</b><span>${o.label}</span></div>
-                  <div class="coupon-chip-apply">TAP KARO</div>
+                  <div><b>${o.code}</b><span>${o.label}${eligible ? "" : " • sirf pehle order ke liye"}</span></div>
+                  <div class="coupon-chip-apply">APPLY</div>
                 </div>
-              `).join("")}
+              `;}).join("")}
             </div>
           ` : ""}
         </div>
