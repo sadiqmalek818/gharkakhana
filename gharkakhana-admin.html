@@ -17,6 +17,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.2/Sortable.min.js"></script>
 <!-- Firebase (Firestore) -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
@@ -687,31 +688,34 @@
 
       <div class="settings-card">
         <h3><i class="fa-solid fa-tags"></i> Dish Categories</h3>
-        <p>Ye categories Menu mein dish add karte waqt dropdown mein dikhengi. "Serving estimate" decide karta hai ki customer ko dish select karte waqt "~X logo ke liye" wala hisaab dikhe ya nahi (jaise Chai/Cold drink mein zaroorat nahi, Mithai mein kam matra lagti hai). "Piece/person" sirf un dishes ke liye kaam karta hai jinki unit "Per piece" hai (jaise Roti, Puri) — batao ek insaan average kitne piece khata hai, taaki "kitne logo ke liye" ka hisaab sahi lage. "Iske saath suggest karo" — kisi bhi ek category se toggle karo (dono taraf se automatically kaam karega, jaise Roti se Gravy select karo ya Gravy se Roti — dono jagah dikhega).</p>
+        <p>Ye categories Menu mein dish add karte waqt dropdown mein dikhengi. "Serving estimate" decide karta hai ki customer ko dish select karte waqt "~X logo ke liye" wala hisaab dikhe ya nahi (jaise Chai/Cold drink mein zaroorat nahi, Mithai mein kam matra lagti hai). "Piece/person" sirf un dishes ke liye kaam karta hai jinki unit "Per piece" hai (jaise Roti, Puri) — batao ek insaan average kitne piece khata hai, taaki "kitne logo ke liye" ka hisaab sahi lage. "Iske saath suggest karo" — kisi bhi ek category se toggle karo (dono taraf se automatically kaam karega, jaise Roti se Gravy select karo ya Gravy se Roti — dono jagah dikhega). <b>Left wale ⠿ handle ko dabakar upar-neeche drag karo</b> — yehi order homepage ke category icons aur Apna Thaal mein bhi dikhega.</p>
         <div id="categoryRows">
           ${settings.categories.map(c => `
-            <div style="margin-bottom:14px; padding-bottom:12px; border-bottom:1px solid var(--tan);">
-              <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
-                <div class="chip" style="flex:1 1 auto;">${c.label}<i class="fa-solid fa-xmark" onclick="removeCategory('${c.key}')"></i></div>
-                <select onchange="setCategoryEstimateMode('${c.key}', this.value)" style="flex:0 0 auto; padding:8px; border-radius:8px; border:1px solid var(--tan); font-size:11px;">
-                  <option value="normal" ${(!c.estimateMode || c.estimateMode === "normal") ? "selected" : ""}>Normal estimate</option>
-                  <option value="light" ${c.estimateMode === "light" ? "selected" : ""}>Halka (kam matra)</option>
-                  <option value="none" ${c.estimateMode === "none" ? "selected" : ""}>Estimate nahi chahiye</option>
-                </select>
-                <div style="display:flex; align-items:center; gap:4px; flex:0 0 auto;">
-                  <input type="number" min="1" step="1" value="${c.piecesPerPerson || 1}" onchange="setCategoryPiecesPerPerson('${c.key}', this.value)" style="width:48px; padding:8px; border-radius:8px; border:1px solid var(--tan); font-size:11px; text-align:center;">
-                  <span style="font-size:10px; color:var(--text-soft);">piece/person</span>
+            <div class="cat-row" data-key="${c.key}" style="display:flex; gap:8px; margin-bottom:14px; padding-bottom:12px; border-bottom:1px solid var(--tan);">
+              <i class="fa-solid fa-grip-vertical cat-drag-handle" style="cursor:grab; color:var(--text-soft); padding:6px 4px; touch-action:none; align-self:flex-start;"></i>
+              <div style="flex:1; min-width:0;">
+                <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
+                  <div class="chip" style="flex:1 1 auto;">${c.label}<i class="fa-solid fa-xmark" onclick="removeCategory('${c.key}')"></i></div>
+                  <select onchange="setCategoryEstimateMode('${c.key}', this.value)" style="flex:0 0 auto; padding:8px; border-radius:8px; border:1px solid var(--tan); font-size:11px;">
+                    <option value="normal" ${(!c.estimateMode || c.estimateMode === "normal") ? "selected" : ""}>Normal estimate</option>
+                    <option value="light" ${c.estimateMode === "light" ? "selected" : ""}>Halka (kam matra)</option>
+                    <option value="none" ${c.estimateMode === "none" ? "selected" : ""}>Estimate nahi chahiye</option>
+                  </select>
+                  <div style="display:flex; align-items:center; gap:4px; flex:0 0 auto;">
+                    <input type="number" min="1" step="1" value="${c.piecesPerPerson || 1}" onchange="setCategoryPiecesPerPerson('${c.key}', this.value)" style="width:48px; padding:8px; border-radius:8px; border:1px solid var(--tan); font-size:11px; text-align:center;">
+                    <span style="font-size:10px; color:var(--text-soft);">piece/person</span>
+                  </div>
                 </div>
-              </div>
-              <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
-                <span style="font-size:10px; color:var(--text-soft); flex:0 0 auto;">Iske saath suggest karo:</span>
-                ${settings.categories.filter(other => other.key !== c.key).map(other => {
-                  // Symmetric display: highlighted if EITHER side stored the
-                  // link, so admin sees the same state from both categories'
-                  // rows regardless of which one they originally toggled.
-                  const active = (c.pairsWith || []).includes(other.key) || (other.pairsWith || []).includes(c.key);
-                  return `<div class="chip" style="cursor:pointer; ${active ? "background:var(--turmeric); color:var(--charcoal);" : "opacity:0.5;"}" onclick="togglePairsWith('${c.key}', '${other.key}')">${other.label}</div>`;
-                }).join("") || `<span style="font-size:10px; color:var(--text-soft);">Pehle aur category banao</span>`}
+                <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                  <span style="font-size:10px; color:var(--text-soft); flex:0 0 auto;">Iske saath suggest karo:</span>
+                  ${settings.categories.filter(other => other.key !== c.key).map(other => {
+                    // Symmetric display: highlighted if EITHER side stored the
+                    // link, so admin sees the same state from both categories'
+                    // rows regardless of which one they originally toggled.
+                    const active = (c.pairsWith || []).includes(other.key) || (other.pairsWith || []).includes(c.key);
+                    return `<div class="chip" style="cursor:pointer; ${active ? "background:var(--turmeric); color:var(--charcoal);" : "opacity:0.5;"}" onclick="togglePairsWith('${c.key}', '${other.key}')">${other.label}</div>`;
+                  }).join("") || `<span style="font-size:10px; color:var(--text-soft);">Pehle aur category banao</span>`}
+                </div>
               </div>
             </div>
           `).join("")}
@@ -875,6 +879,31 @@
         </div>
       </div>
     `;
+    initCategorySortable();
+  }
+
+  // Drag-and-drop reordering for Dish Categories — uses SortableJS (works
+  // for both touch and mouse, unlike native HTML5 drag which mobile
+  // browsers largely ignore). Re-initialized every renderSettings() call
+  // since box.innerHTML replaces the DOM node each time.
+  function initCategorySortable(){
+    const el = document.getElementById("categoryRows");
+    if(!el || typeof Sortable === "undefined") return;
+    if(window.categorySortableInstance) window.categorySortableInstance.destroy();
+    window.categorySortableInstance = new Sortable(el, {
+      handle: ".cat-drag-handle",
+      animation: 150,
+      onEnd: function(evt){
+        if(evt.oldIndex === evt.newIndex) return;
+        const [moved] = settings.categories.splice(evt.oldIndex, 1);
+        settings.categories.splice(evt.newIndex, 0, moved);
+        // This order also drives the homepage category-icon row and the
+        // Apna Thaal accordion order on the customer site — saveCatalog()
+        // re-renders this settings screen too, which re-creates the
+        // Sortable instance above so dragging keeps working after a save.
+        saveCatalog();
+      },
+    });
   }
 
   function slugify(text){
