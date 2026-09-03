@@ -457,6 +457,32 @@
     font-size:13px; font-family:'Inter',sans-serif; background:white; color:var(--charcoal);
   }
   .modal-actions{display:flex; gap:10px; margin-top:16px;}
+  /* Coupon card — dashed-ticket look like the big delivery apps use, instead of a bare input box */
+  .coupon-box{
+    background:linear-gradient(135deg, #FFF9F0, #FFF1DE); border:1.5px dashed var(--turmeric);
+    border-radius:14px; padding:12px; margin-bottom:12px;
+  }
+  .coupon-box-row{display:flex; align-items:center; gap:8px;}
+  .coupon-box-row input{
+    flex:1; padding:9px 10px; border-radius:8px; border:1px solid var(--tan);
+    font-size:12.5px; font-family:'Inter',sans-serif; background:white; color:var(--charcoal); min-width:0;
+  }
+  .coupon-suggestions{display:flex; flex-direction:column; gap:6px; margin-top:10px;}
+  .coupon-chip{
+    display:flex; align-items:center; gap:9px; background:white; border:1px solid var(--tan);
+    border-radius:10px; padding:9px 10px; cursor:pointer; transition:transform 0.1s;
+  }
+  .coupon-chip:active{transform:scale(0.98);}
+  .coupon-chip > div:nth-child(2){display:flex; flex-direction:column; flex:1; min-width:0;}
+  .coupon-chip b{font-size:12px; color:var(--chili); letter-spacing:0.3px;}
+  .coupon-chip span{font-size:10.5px; color:var(--text-soft);}
+  .coupon-chip-apply{font-size:9.5px; font-weight:700; color:var(--sage); white-space:nowrap;}
+  .coupon-applied{
+    display:flex; justify-content:space-between; align-items:center; gap:8px;
+    background:#EAF4E4; border:1px solid var(--sage); border-radius:10px; padding:10px 12px; margin-bottom:12px;
+  }
+  .coupon-applied > span:first-child{font-size:11.5px; color:var(--sage); font-weight:700;}
+  .coupon-remove{font-size:10.5px; color:var(--text-soft); text-decoration:underline; cursor:pointer; white-space:nowrap;}
   .qr-box{
     background:white; border:1px solid var(--tan); border-radius:18px; padding:20px;
     display:flex; flex-direction:column; align-items:center; margin:14px 0;
@@ -1566,9 +1592,9 @@
       appliedOffer = best;
     }
 
-    function applyCouponCode(){
-      const input = document.getElementById("couponInput");
-      const code = input.value.trim().toUpperCase();
+    function applyCouponCode(codeArg){
+      // codeArg is set when a suggestion chip is tapped; otherwise read the input box.
+      const code = (codeArg || document.getElementById("couponInput")?.value || "").trim().toUpperCase();
       if(!code){ showToast("Coupon code likho"); return; }
       const subtotal = cartTotal();
       const offer = siteOffers.find(o => offerIsEligible(o) && o.code && o.code.toUpperCase() === code);
@@ -1592,19 +1618,36 @@
       const discount = appliedOffer ? Math.min(appliedOffer.amount, subtotal) : 0;
       const deliveryCharge = fulfilment === "delivery" ? computeDeliveryCharge(orderPersonCount) : 0;
       const total = subtotal - discount + deliveryCharge;
+      const isAdvance = orderDate !== todayISO();
+      // Coupons the customer could still apply (not already applied, not
+      // auto-only, still eligible) — shown as tappable chips like
+      // Swiggy/Zomato's "View all offers" list, instead of a bare text box.
+      const availableCodedOffers = siteOffers.filter(o => offerIsEligible(o) && o.code && (!appliedOffer || appliedOffer.code !== o.code));
       modal.innerHTML = `
         <h3>Payment karo</h3>
-        <div class="field">
-          <label>Coupon Code (ho to)</label>
-          <div style="display:flex; gap:8px;">
-            <input type="text" id="couponInput" placeholder="e.g. GHAR20" style="text-transform:uppercase;">
-            <button class="btn btn-ghost btn-sm" onclick="applyCouponCode()">Apply</button>
+        ${isAdvance ? `<div style="background:#FFF4E0; border:1px solid var(--turmeric); border-radius:10px; padding:9px 12px; margin-bottom:12px; font-size:11.5px; display:flex; align-items:center; gap:8px;"><i class="fa-solid fa-calendar-clock" style="color:var(--turmeric); font-size:15px;"></i><span><b>Advance Order</b> — ${new Date(orderDate + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })} ke liye</span></div>` : ""}
+        <div class="coupon-box">
+          <div class="coupon-box-row">
+            <i class="fa-solid fa-ticket" style="color:var(--chili); font-size:16px;"></i>
+            <input type="text" id="couponInput" placeholder="Coupon code daalo" style="text-transform:uppercase;" onkeydown="if(event.key==='Enter') applyCouponCode();">
+            <button class="btn btn-primary btn-sm" onclick="applyCouponCode()">Apply</button>
           </div>
+          ${availableCodedOffers.length ? `
+            <div class="coupon-suggestions">
+              ${availableCodedOffers.map(o => `
+                <div class="coupon-chip" onclick="applyCouponCode('${o.code}')">
+                  <i class="fa-solid fa-tag"></i>
+                  <div><b>${o.code}</b><span>${o.label}</span></div>
+                  <div class="coupon-chip-apply">TAP KARO</div>
+                </div>
+              `).join("")}
+            </div>
+          ` : ""}
         </div>
         ${appliedOffer ? `
-          <div style="background:var(--cream); border-radius:10px; padding:9px 12px; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center;">
-            <span style="font-size:11.5px; color:var(--sage); font-weight:700;"><i class="fa-solid fa-tag"></i> ${appliedOffer.label}</span>
-            <span style="font-size:11px; color:var(--text-soft); cursor:pointer; text-decoration:underline;" onclick="removeAppliedOffer()">Hatao</span>
+          <div class="coupon-applied">
+            <span><i class="fa-solid fa-circle-check"></i> <b>${appliedOffer.code || appliedOffer.label}</b> apply ho gaya — ₹${discount} bacha!</span>
+            <span class="coupon-remove" onclick="removeAppliedOffer()">Hatao</span>
           </div>
         ` : ""}
         <div style="border-top:1px dashed var(--tan); padding-top:10px; margin-bottom:14px;">
@@ -1654,6 +1697,10 @@
       // sirf pehle ticket ke total mein add karte hain; har ticket mein
       // deliveryCharge field admin ko poori jaankari ke liye dikhta hai.
       const deliveryCharge = fulfilment === "delivery" ? computeDeliveryCharge(orderPersonCount) : 0;
+      // Marks whether the customer booked this for a future date (vs today) —
+      // drives the "Advance Order" badges/messaging on customer, admin, and
+      // (once wired up) cook side, plus the cancel-window rule below.
+      const isAdvance = orderDate !== todayISO();
 
       const baseFields = {
         customer: customerName,
@@ -1666,6 +1713,7 @@
         referralCode: referralCode || "",
         personCount: orderPersonCount,
         deliveryCharge: deliveryCharge,
+        isAdvance: isAdvance,
       };
 
       if(window.FIREBASE_CONFIGURED){
@@ -1709,10 +1757,18 @@
         <div class="order-success">
           <i class="fa-solid fa-clock" style="color:var(--turmeric);"></i>
           <h3>Order cook ko bhej diya gaya!</h3>
-          <p style="font-size:12.5px; color:var(--text-soft); margin-top:6px;">
-            Order #${orderId} — ${dateLabel} ke ${mealLabel} ke liye (${fulfilment === "pickup" ? "Pickup" : "Delivery"}) abhi <b>cook ke approval ka wait</b> kar raha hai.
-            Cook confirm karega tabhi order pakka hoga — confirmation WhatsApp pe aayega.
-          </p>
+          ${isAdvance ? `
+            <div style="background:#FFF4E0; border:1px solid var(--turmeric); border-radius:10px; padding:10px 12px; margin-top:12px; font-size:11.5px; text-align:left;">
+              <b><i class="fa-solid fa-calendar-clock"></i> Yeh ek Advance Order hai</b> — ${dateLabel} ke liye book hua hai.
+              Cook/Admin jab isse approve karenge, aapko turant WhatsApp aur is app mein notification mil jayegi.
+              Agar plan badle to order ke din se pehle tak (24 ghante ka window) aap ise <b>khud cancel</b> kar sakte ho — apni Profile mein order ke saamne "Cancel" button milega.
+            </div>
+          ` : `
+            <p style="font-size:12.5px; color:var(--text-soft); margin-top:6px;">
+              Order #${orderId} — ${dateLabel} ke ${mealLabel} ke liye (${fulfilment === "pickup" ? "Pickup" : "Delivery"}) abhi <b>cook ke approval ka wait</b> kar raha hai.
+              Cook confirm karega tabhi order pakka hoga — confirmation WhatsApp pe aayega.
+            </p>
+          `}
           <button class="btn btn-primary" style="margin-top:18px; width:100%;" onclick="finishOrder()">Theek hai</button>
         </div>
       `;
@@ -2147,6 +2203,22 @@
       });
     }
 
+    // A "cancel window" of roughly 24 hours before the order date — since
+    // orders only store a date (no exact hour), the cutoff is date-level:
+    // cancellable any day before the order date, hidden once it becomes the
+    // order's own day (that's the last ~24h stretch, when the cook is
+    // likely already prepping).
+    function isCancellableByCustomer(order){
+      return (order.status === "Pending" || order.status === "Confirmed") && order.date > todayISO();
+    }
+
+    function cancelOrderByCustomer(orderId){
+      if(!confirm("Order cancel karna hai? Ye wapas nahi hoga.")) return;
+      db.collection("orders").doc(orderId).update({ status: "Declined", cancelledBy: "customer" })
+        .then(() => showToast("Order cancel ho gaya"))
+        .catch(() => showToast("Cancel nahi ho paya, dobara try karo"));
+    }
+
     const STATUS_LABEL = { Pending: "Admin approval ka wait", Confirmed: "Cook ko mil gaya", Cooking: "Ban raha hai", Declined: "Cancel ho gaya" };
     function renderProfileOrdersList(){
       const el = document.getElementById("profileOrdersList");
@@ -2161,7 +2233,11 @@
               <div style="font-size:10px; font-weight:700; color:${o.status === "Declined" ? "var(--chili)" : "var(--sage)"}; white-space:nowrap;">${STATUS_LABEL[o.status] || o.status || ""}</div>
             </div>
             <div style="font-size:10.5px; color:var(--text-soft); margin-top:3px;">${o.cook} • ${o.date} • ₹${o.total}</div>
-            ${o.items ? `<button class="btn btn-ghost btn-sm" style="margin-top:8px;" onclick="reorderPastOrder(${idx})"><i class="fa-solid fa-rotate-right"></i> Reorder karo</button>` : ""}
+            ${o.isAdvance ? `<div style="display:inline-flex; align-items:center; gap:4px; background:#FFF4E0; color:var(--turmeric); border-radius:6px; padding:2px 7px; font-size:9.5px; font-weight:700; margin-top:5px;"><i class="fa-solid fa-calendar-clock"></i> ADVANCE ORDER</div>` : ""}
+            <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;">
+              ${o.items ? `<button class="btn btn-ghost btn-sm" onclick="reorderPastOrder(${idx})"><i class="fa-solid fa-rotate-right"></i> Reorder karo</button>` : ""}
+              ${isCancellableByCustomer(o) ? `<button class="btn btn-ghost btn-sm" style="color:var(--chili); border-color:#F3C9C0;" onclick="cancelOrderByCustomer('${o.id}')"><i class="fa-solid fa-ban"></i> Cancel karo</button>` : ""}
+            </div>
           </div>
         `).join("");
       }
@@ -2174,6 +2250,30 @@
         if(changed) playAlertSound();
       }
       profileOrdersSeen = statusMap;
+      checkAdvanceOrderReminders(profileOrders);
+    }
+
+    // "24-hour-before" reminder — NOTE: this only fires while the site/app is
+    // actually open (same limitation as the status watcher below; there's no
+    // push-notification server here). It checks every time the customer's
+    // orders list loads, and shows a one-time-per-day toast for any order
+    // scheduled for tomorrow, so it surfaces whenever they open the app on
+    // the day before their order.
+    function checkAdvanceOrderReminders(orders){
+      const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
+      const tomorrowISO = tomorrow.toISOString().slice(0, 10);
+      orders.forEach(o => {
+        if(o.date !== tomorrowISO || o.status === "Declined") return;
+        const seenKey = `gkk_reminded_${o.id}_${o.date}`;
+        if(localStorage.getItem(seenKey)) return;
+        localStorage.setItem(seenKey, "1");
+        const msg = `⏰ Reminder: Kal (${o.date}) aapka order hai — ${o.item}`;
+        showToast(msg);
+        playAlertSound();
+        if(window.Notification && Notification.permission === "granted"){
+          try{ new Notification("GharKaKhana", { body: msg }); } catch(e){}
+        }
+      });
     }
 
     function reorderPastOrder(idx){
@@ -2198,6 +2298,14 @@
       Cooking: "Aapka order banna shuru ho gaya!",
       Declined: "Maaf karo, aapka order cancel kar diya gaya.",
     };
+    // Same as above but worded for an advance (future-dated) order — makes
+    // clear which order this notification is about, since the customer
+    // could have more than one order in flight at once.
+    const STATUS_WATCH_MESSAGE_ADVANCE = {
+      Confirmed: "Aapka ADVANCE order approve ho gaya ✓ — cook ne is date ke liye taiyari confirm kar di hai.",
+      Cooking: "Aapka advance order banna shuru ho gaya!",
+      Declined: "Aapka advance order cancel kar diya gaya hai.",
+    };
     let orderStatusWatcherPhone = null; // which phone the current watcher is subscribed for
     let orderStatusWatcherUnsub = null;
     startOrderStatusWatcher(); // auto-start if a phone is already remembered from a past visit
@@ -2207,6 +2315,11 @@
       if(orderStatusWatcherUnsub) orderStatusWatcherUnsub();
       orderStatusWatcherPhone = customerPhone;
       orderStatusWatcherUnsub = db.collection("orders").where("customerPhone", "==", customerPhone).onSnapshot(snapshot => {
+        // Also check every live order for the "day-before" reminder here —
+        // this fires whenever the watcher gets a snapshot (e.g. app opened),
+        // not just on status changes, so the reminder isn't missed if
+        // nothing else changed about the order.
+        checkAdvanceOrderReminders(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
         snapshot.docChanges().forEach(change => {
           if(change.type !== "modified" && change.type !== "added") return;
           const order = change.doc.data();
@@ -2215,7 +2328,8 @@
           if(lastSeen === order.status) return; // already notified for this status
           localStorage.setItem(seenKey, order.status);
           if(lastSeen === null) return; // first time we're seeing this order — don't notify for its initial (Pending) state
-          const msg = STATUS_WATCH_MESSAGE[order.status] || (order.status && order.status.startsWith("Ready") ? `Aapka order ${order.status.toLowerCase()} hai!` : null);
+          const msgTable = order.isAdvance ? STATUS_WATCH_MESSAGE_ADVANCE : STATUS_WATCH_MESSAGE;
+          const msg = msgTable[order.status] || (order.status && order.status.startsWith("Ready") ? `Aapka order ${order.status.toLowerCase()} hai!` : null);
           if(!msg) return;
           playAlertSound();
           document.getElementById("profileBadge").style.display = "block";

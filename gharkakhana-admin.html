@@ -1312,21 +1312,40 @@
     `;
 
     const list = document.getElementById("list");
+    // "Reminder" banner — since there's no push-notification server here,
+    // this is a can't-miss-it visual instead: whenever admin opens Orders
+    // (on ANY date), tomorrow's advance orders are shown right at the top,
+    // not just when admin happens to click tomorrow's date on the calendar.
+    const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowISO = dateToISO(tomorrow);
+    const tomorrowOrders = data.orders.filter(o => o.date === tomorrowISO && o.status !== "Declined");
+    const reminderBanner = tomorrowOrders.length ? `
+      <div style="background:#FFF4E0; border:1px solid var(--turmeric); border-radius:12px; padding:12px 14px; margin-bottom:14px;">
+        <div style="display:flex; align-items:center; gap:8px; font-weight:700; font-size:12.5px; margin-bottom:6px;">
+          <i class="fa-solid fa-calendar-clock" style="color:var(--turmeric);"></i> Kal (${tomorrowISO}) ke ${tomorrowOrders.length} Advance Order${tomorrowOrders.length > 1 ? "s" : ""} — taiyari shuru kar do
+        </div>
+        <div style="font-size:11px; color:var(--text-soft);">${tomorrowOrders.map(o => `${o.item} — ${o.customer} (${o.cook})`).join(" • ")}</div>
+        <div style="margin-top:8px;"><span class="btn btn-ghost btn-sm" onclick="selectDate('${tomorrowISO}')">Dekho</span></div>
+      </div>
+    ` : "";
+
     if(dayOrders.length === 0){
-      list.innerHTML = `<div class="empty"><i class="fa-solid fa-calendar-xmark" style="font-size:22px; margin-bottom:8px; display:block;"></i>Is date pe koi order nahi hai.</div>`;
+      list.innerHTML = reminderBanner + `<div class="empty"><i class="fa-solid fa-calendar-xmark" style="font-size:22px; margin-bottom:8px; display:block;"></i>Is date pe koi order nahi hai.</div>`;
       return;
     }
 
-    list.innerHTML = dayOrders.map(o => `
+    list.innerHTML = reminderBanner + dayOrders.map(o => `
       <div class="order-card ${o.meal === "Urgent" ? "urgent" : ""}">
         <div class="card-top">
           <div class="info">
             <div class="order-item">${o.item}${o.meal === "Urgent" ? '<span class="urgent-tag">URGENT</span>' : ""}</div>
+            ${o.isAdvance ? `<div style="display:inline-flex; align-items:center; gap:4px; background:#FFF4E0; color:var(--turmeric); border-radius:6px; padding:2px 7px; font-size:9.5px; font-weight:700; margin:4px 0;"><i class="fa-solid fa-calendar-clock"></i> ADVANCE ORDER — ${o.date}</div>` : ""}
             <div class="order-meta">${o.customer} • ${o.cook} • ${o.area}</div>
             <div class="order-meta"><i class="fa-solid ${o.type === "Pickup" ? "fa-store" : "fa-motorcycle"}"></i> ${o.type} • <i class="fa-solid ${o.meal === "Lunch" ? "fa-sun" : o.meal === "Dinner" ? "fa-moon" : o.meal === "Urgent" ? "fa-bolt" : "fa-utensils"}"></i> ${o.meal} • #${o.id}</div>
             ${o.orderGroupId ? `<div class="order-meta" style="color:var(--turmeric);"><i class="fa-solid fa-layer-group"></i> Apna Thaal combo — group #${o.orderGroupId} (alag cooks ke liye alag ticket)</div>` : ""}
             ${o.discount > 0 ? `<div class="order-meta" style="color:var(--sage);"><i class="fa-solid fa-tag"></i> ${o.offerApplied || "Offer"} — -₹${o.discount} (₹${o.subtotal} → ₹${o.total})</div>` : ""}
             ${o.deliveryCharge > 0 ? `<div class="order-meta"><i class="fa-solid fa-motorcycle"></i> Delivery charge (${o.personCount || 1} log) — ₹${o.deliveryCharge}, bill total mein shaamil</div>` : ""}
+            ${o.cancelledBy === "customer" ? `<div class="order-meta" style="color:var(--chili);"><i class="fa-solid fa-ban"></i> Customer ne khud cancel kiya</div>` : ""}
           </div>
           <span class="badge ${o.status === "Pending" ? "inactive" : o.status === "Declined" ? "inactive" : "active"}">${o.status}</span>
         </div>
