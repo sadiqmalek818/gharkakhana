@@ -806,11 +806,11 @@
             <div style="border:1px solid var(--tan); border-radius:12px; padding:10px 12px; margin-bottom:8px; ${o.active ? "" : "opacity:0.5;"}">
               <div style="display:flex; justify-content:space-between; gap:8px;">
                 <div style="font-size:12.5px; font-weight:700;">${o.label}</div>
-                <span style="font-size:9.5px; font-weight:700; color:${o.kind === "discount" ? "var(--sage)" : "var(--turmeric)"};">${o.kind === "discount" ? (o.discountType === "percent" ? o.discountValue + "% OFF" : "₹" + o.discountValue + " OFF") : "INFO ONLY"}</span>
+                <span style="font-size:9.5px; font-weight:700; color:${o.kind === "discount" ? "var(--sage)" : o.kind === "freeItem" ? "var(--chili)" : "var(--turmeric)"};">${o.kind === "discount" ? (o.discountType === "percent" ? o.discountValue + "% OFF" : "₹" + o.discountValue + " OFF") : o.kind === "freeItem" ? `🎁 ${o.freeItemName} FREE` : "INFO ONLY"}</span>
               </div>
               <div style="font-size:10.5px; color:var(--text-soft); margin-top:2px;">${o.sub || ""}</div>
               <div style="font-size:9.5px; color:var(--text-soft); margin-top:4px;">
-                ${o.kind === "discount" ? (o.code ? `Code: ${o.code}` : "Auto-apply (no code)") : ""}
+                ${o.kind !== "info" ? (o.code ? `Code: ${o.code}` : "Auto-apply (no code)") : ""}
                 ${o.firstOrderOnly ? " • Sirf pehle order pe" : ""}
                 ${o.active ? "" : " • Inactive"}
               </div>
@@ -1063,7 +1063,8 @@
         <div class="field"><label>Sub-text (chhota description)</label><input type="text" id="o_sub" value="${offer ? (offer.sub || "") : ""}" placeholder="e.g. Naye customers ke liye"></div>
         <div class="field"><label>Type</label>
           <select id="o_kind" onchange="toggleOfferDiscountFields()">
-            <option value="discount" ${offer && offer.kind === "discount" ? "selected" : ""}>Discount (checkout pe apply hoga)</option>
+            <option value="discount" ${offer && offer.kind === "discount" ? "selected" : ""}>Discount (₹ ya % — checkout pe apply hoga)</option>
+            <option value="freeItem" ${offer && offer.kind === "freeItem" ? "selected" : ""}>Free Item (jaise "Cake Free", "Cold Drink Free")</option>
             <option value="info" ${offer && offer.kind === "info" ? "selected" : ""}>Sirf Info Banner (koi discount nahi)</option>
           </select>
         </div>
@@ -1075,6 +1076,18 @@
             </select>
           </div>
           <div class="field"><label>Value</label><input type="number" id="o_discountValue" value="${offer ? offer.discountValue : ""}" placeholder="e.g. 20"></div>
+        </div>
+        <div id="offerFreeItemFields">
+          <div class="field"><label>Kaunsi dish free hogi</label>
+            <select id="o_freeItemName">
+              <option value="">-- dish chuno --</option>
+              ${Array.from(new Set(data.menu.map(i => i.name))).sort().map(name => `<option value="${name}" ${offer && offer.freeItemName === name ? "selected" : ""}>${name}</option>`).join("")}
+            </select>
+          </div>
+          <div class="field"><label>Kitni quantity free (uske apni unit mein — kg/piece/etc.)</label><input type="number" id="o_freeItemQty" min="0.5" step="0.5" value="${offer ? (offer.freeItemQty || 1) : 1}" placeholder="e.g. 1"></div>
+          <p style="margin-top:-6px;">Customer ke cart mein yeh dish honi zaroori hai, tabhi offer apply hogi — value uski current menu price se khud calculate hogi (yahan number type karne ki zaroorat nahi, price badle to bhi yeh offer sahi rahegi).</p>
+        </div>
+        <div id="offerCodeFields">
           <div class="field"><label>Coupon Code (khaali chodo = auto-apply, code nahi chahiye)</label><input type="text" id="o_code" value="${offer ? (offer.code || "") : ""}" placeholder="e.g. GHAR20"></div>
           <label style="display:flex; align-items:center; gap:8px; font-size:12px; margin-bottom:10px;"><input type="checkbox" id="o_firstOrderOnly" ${offer && offer.firstOrderOnly ? "checked" : ""}> Sirf customer ke pehle order pe lagu ho</label>
         </div>
@@ -1091,6 +1104,8 @@
   function toggleOfferDiscountFields(){
     const kind = document.getElementById("o_kind").value;
     document.getElementById("offerDiscountFields").style.display = kind === "discount" ? "block" : "none";
+    document.getElementById("offerFreeItemFields").style.display = kind === "freeItem" ? "block" : "none";
+    document.getElementById("offerCodeFields").style.display = kind === "info" ? "none" : "block";
   }
 
   function saveOffer(){
@@ -1107,6 +1122,11 @@
       showToast("Discount ki value 0 nahi ho sakti — ya to value bharo ya 'Sirf Info Banner' select karo");
       return;
     }
+    const freeItemName = kind === "freeItem" ? document.getElementById("o_freeItemName").value : "";
+    if(kind === "freeItem" && !freeItemName){
+      showToast("Free-item offer ke liye ek dish chuno");
+      return;
+    }
     const offer = {
       key: existingKey || slugify(label),
       label,
@@ -1114,8 +1134,10 @@
       kind,
       discountType: document.getElementById("o_discountType").value,
       discountValue,
-      code: kind === "discount" ? document.getElementById("o_code").value.trim().toUpperCase() : "",
-      firstOrderOnly: kind === "discount" ? document.getElementById("o_firstOrderOnly").checked : false,
+      freeItemName,
+      freeItemQty: kind === "freeItem" ? (parseFloat(document.getElementById("o_freeItemQty").value) || 1) : 0,
+      code: kind !== "info" ? document.getElementById("o_code").value.trim().toUpperCase() : "",
+      firstOrderOnly: kind !== "info" ? document.getElementById("o_firstOrderOnly").checked : false,
       active: document.getElementById("o_active").checked,
     };
     const idx = settings.offers.findIndex(o => o.key === offer.key);

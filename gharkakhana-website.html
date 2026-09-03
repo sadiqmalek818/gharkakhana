@@ -1582,12 +1582,27 @@
     }
 
     function offerIsEligible(offer){
-      if(offer.kind !== "discount" || !offer.active) return false;
+      if((offer.kind !== "discount" && offer.kind !== "freeItem") || !offer.active) return false;
       if(offer.firstOrderOnly && isFirstOrderCustomer !== true) return false;
       return true;
     }
 
-    function computeOfferDiscount(offer, subtotal){
+    // For a "freeItem" offer, the discount only exists if the target dish is
+    // actually in the cart — value comes from the LIVE menu price (not a
+    // number admin typed), so it stays correct even if the dish's price
+    // changes later. Capped at what that dish is actually worth in the
+    // cart, so the customer can never get more "free" than they ordered.
+    function computeOfferDiscount(offer, subtotal, cart){
+      if(offer.kind === "freeItem"){
+        const menuItem = (latestMenuItems || []).find(i => i.name === offer.freeItemName && i.status === "active");
+        if(!menuItem) return 0;
+        const needle = offer.freeItemName.toLowerCase();
+        const matchingLines = (cart || []).filter(c => (c.name || "").toLowerCase().includes(needle));
+        if(matchingLines.length === 0) return 0;
+        const cartValueOfItem = matchingLines.reduce((s, c) => s + (c.total || 0), 0);
+        const freeValue = menuItem.price * (offer.freeItemQty || 1);
+        return Math.min(freeValue, cartValueOfItem, subtotal);
+      }
       if(offer.discountType === "percent") return Math.round(subtotal * offer.discountValue / 100);
       return Math.min(offer.discountValue, subtotal);
     }
@@ -1603,7 +1618,7 @@
       const autoOffers = siteOffers.filter(o => offerIsEligible(o) && !o.code);
       let best = null;
       autoOffers.forEach(o => {
-        const amt = computeOfferDiscount(o, subtotal);
+        const amt = computeOfferDiscount(o, subtotal, cart);
         if(amt > 0 && (!best || amt > best.amount)) best = { key: o.key, label: o.label, amount: amt, code: "" };
       });
       appliedOffer = best;
@@ -1614,7 +1629,7 @@
       const code = (codeArg || document.getElementById("couponInput")?.value || "").trim().toUpperCase();
       if(!code){ showToast("Coupon code likho"); return; }
       const subtotal = cartTotal();
-      const offer = siteOffers.find(o => o.code && o.code.toUpperCase() === code && o.kind === "discount" && o.active);
+      const offer = siteOffers.find(o => o.code && o.code.toUpperCase() === code && (o.kind === "discount" || o.kind === "freeItem") && o.active);
       if(!offer){
         showToast("Ye code valid nahi hai ya expire ho gaya hai");
         return;
@@ -1623,9 +1638,13 @@
         showToast("Yeh code sirf pehle order par use ho sakta hai");
         return;
       }
-      const amount = computeOfferDiscount(offer, subtotal);
+      const amount = computeOfferDiscount(offer, subtotal, cart);
       if(amount <= 0){
-        showToast("Is code se abhi koi discount nahi ban raha");
+        if(offer.kind === "freeItem"){
+          showToast(`Yeh offer sirf "${offer.freeItemName}" order karne par milta hai — pehle usse cart mein daalo`);
+        } else {
+          showToast("Is code se abhi koi discount nahi ban raha");
+        }
         return;
       }
       appliedOffer = { key: offer.key, label: offer.label, amount, code };
@@ -1675,7 +1694,7 @@
       // Show every active coded offer — including ones the customer isn't
       // eligible for right now — so nothing feels hidden. Ineligible ones
       // are visually dimmed with the reason, instead of silently vanishing.
-      const allCodedOffers = siteOffers.filter(o => o.kind === "discount" && o.active && o.code && (!appliedOffer || appliedOffer.code !== o.code));
+      const allCodedOffers = siteOffers.filter(o => (o.kind === "discount" || o.kind === "freeItem") && o.active && o.code && (!appliedOffer || appliedOffer.code !== o.code));
       modal.innerHTML = `
         <h3>Payment karo</h3>
         ${isAdvance ? `<div style="background:#FFF4E0; border:1px solid var(--turmeric); border-radius:10px; padding:9px 12px; margin-bottom:12px; font-size:11.5px; display:flex; align-items:center; gap:8px;"><i class="fa-solid fa-calendar-clock" style="color:var(--turmeric); font-size:15px;"></i><span><b>Advance Order</b> — ${new Date(orderDate + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })} ke liye</span></div>` : ""}
@@ -1691,7 +1710,7 @@
                 const eligible = !o.firstOrderOnly || isFirstOrderCustomer === true;
                 return `
                 <div class="coupon-chip ${eligible ? "" : "coupon-chip-disabled"}" onclick="${eligible ? `applyCouponCode('${o.code}')` : `showToast('Yeh sirf pehle order par use ho sakta hai')`}">
-                  <i class="fa-solid fa-tag"></i>
+                  <i class="fa-solid ${o.kind === "freeItem" ? "fa-gift" : "fa-tag"}"></i>
                   <div><b>${o.code}</b><span>${o.label}${eligible ? "" : " • sirf pehle order ke liye"}</span></div>
                   <div class="coupon-chip-apply">APPLY</div>
                 </div>
