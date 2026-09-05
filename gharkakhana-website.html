@@ -497,6 +497,19 @@
     70%{ opacity:1; }
     100%{ opacity:0; transform:translate(-50%,-50%) rotate(var(--angle)) translateX(var(--dist)) scale(1.1); }
   }
+  /* Zomato/Swiggy-style pop-in badge showing "FREE" or the discount amount, right after the star burst */
+  .coupon-pop-badge{
+    position:absolute; right:10px; top:-14px; background:var(--chili); color:white;
+    font-size:12px; font-weight:800; letter-spacing:0.3px; padding:6px 14px; border-radius:20px;
+    box-shadow:0 4px 10px rgba(180,50,30,0.35); animation:badgePop 1.8s ease-out forwards;
+  }
+  @keyframes badgePop{
+    0%{ opacity:0; transform:scale(0.3) translateY(6px); }
+    15%{ opacity:1; transform:scale(1.15) translateY(0); }
+    25%{ transform:scale(1); }
+    80%{ opacity:1; transform:scale(1) translateY(0); }
+    100%{ opacity:0; transform:scale(0.9) translateY(-6px); }
+  }
   .qr-box{
     background:white; border:1px solid var(--tan); border-radius:18px; padding:20px;
     display:flex; flex-direction:column; align-items:center; margin:14px 0;
@@ -1619,7 +1632,7 @@
       let best = null;
       autoOffers.forEach(o => {
         const amt = computeOfferDiscount(o, subtotal, cart);
-        if(amt > 0 && (!best || amt > best.amount)) best = { key: o.key, label: o.label, amount: amt, code: "" };
+        if(amt > 0 && (!best || amt > best.amount)) best = { key: o.key, label: o.label, amount: amt, code: "", kind: o.kind };
       });
       appliedOffer = best;
     }
@@ -1647,16 +1660,18 @@
         }
         return;
       }
-      appliedOffer = { key: offer.key, label: offer.label, amount, code };
+      appliedOffer = { key: offer.key, label: offer.label, amount, code, kind: offer.kind };
       renderPaymentStep();
-      triggerCouponBurst();
+      triggerCouponBurst(offer.kind === "freeItem" ? "FREE" : `-₹${amount}`);
       showToast(`🎉 ${offer.label} apply ho gaya — ₹${amount} ka discount mila!`);
     }
 
-    // Small celebratory star-burst next to the "applied" banner — pure
-    // CSS/JS, no library needed. Purely cosmetic, safe to no-op if the
-    // banner element isn't in the DOM for some reason.
-    function triggerCouponBurst(){
+    // Small celebratory star-burst + a bouncy amount/FREE badge next to the
+    // "applied" banner — pure CSS/JS, no library needed. badgeText is what
+    // shows inside the pop-in badge (e.g. "FREE" or "-₹300"), matching the
+    // Zomato/Swiggy-style confirmation. Purely cosmetic, safe to no-op if
+    // the banner element isn't in the DOM for some reason.
+    function triggerCouponBurst(badgeText){
       requestAnimationFrame(() => {
         const anchor = document.querySelector(".coupon-applied");
         if(!anchor) return;
@@ -1676,6 +1691,14 @@
         }
         anchor.appendChild(burst);
         setTimeout(() => burst.remove(), 900);
+
+        if(badgeText){
+          const badge = document.createElement("div");
+          badge.className = "coupon-pop-badge";
+          badge.textContent = badgeText;
+          anchor.appendChild(badge);
+          setTimeout(() => badge.remove(), 1800);
+        }
       });
     }
 
@@ -1694,7 +1717,7 @@
       // Show every active coded offer — including ones the customer isn't
       // eligible for right now — so nothing feels hidden. Ineligible ones
       // are visually dimmed with the reason, instead of silently vanishing.
-      const allCodedOffers = siteOffers.filter(o => (o.kind === "discount" || o.kind === "freeItem") && o.active && o.code && (!appliedOffer || appliedOffer.code !== o.code));
+      const allCodedOffers = siteOffers.filter(o => (o.kind === "discount" || o.kind === "freeItem") && o.active && o.code && !o.hidden && (!appliedOffer || appliedOffer.code !== o.code));
       modal.innerHTML = `
         <h3>Payment karo</h3>
         ${isAdvance ? `<div style="background:#FFF4E0; border:1px solid var(--turmeric); border-radius:10px; padding:9px 12px; margin-bottom:12px; font-size:11.5px; display:flex; align-items:center; gap:8px;"><i class="fa-solid fa-calendar-clock" style="color:var(--turmeric); font-size:15px;"></i><span><b>Advance Order</b> — ${new Date(orderDate + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })} ke liye</span></div>` : ""}
@@ -1726,7 +1749,7 @@
         ` : ""}
         <div style="border-top:1px dashed var(--tan); padding-top:10px; margin-bottom:14px;">
           <div style="display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:4px;"><span>Subtotal</span><span>₹${subtotal}</span></div>
-          ${discount > 0 ? `<div style="display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:4px; color:var(--sage);"><span>Discount</span><span>-₹${discount}</span></div>` : ""}
+          ${discount > 0 ? `<div style="display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:4px; color:var(--sage);"><span>${appliedOffer && appliedOffer.kind === "freeItem" ? `🎁 ${appliedOffer.label}` : (appliedOffer ? appliedOffer.label : "Discount")}</span><span>-₹${discount}</span></div>` : ""}
           ${fulfilment === "delivery" ? `<div style="display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:4px;"><span><i class="fa-solid fa-motorcycle"></i> Delivery Charge (${orderPersonCount} log)</span><span>₹${deliveryCharge}</span></div>` : ""}
           <div style="display:flex; justify-content:space-between; font-size:14.5px; font-weight:700; margin-top:6px;"><span>Total</span><span>₹${total}</span></div>
         </div>

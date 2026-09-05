@@ -811,6 +811,7 @@
               <div style="font-size:10.5px; color:var(--text-soft); margin-top:2px;">${o.sub || ""}</div>
               <div style="font-size:9.5px; color:var(--text-soft); margin-top:4px;">
                 ${o.kind !== "info" ? (o.code ? `Code: ${o.code}` : "Auto-apply (no code)") : ""}
+                ${o.hidden ? ` • <span style="color:var(--chili); font-weight:700;">Hidden (public list mein nahi)</span>` : ""}
                 ${o.firstOrderOnly ? " • Sirf pehle order pe" : ""}
                 ${o.active ? "" : " • Inactive"}
               </div>
@@ -1090,6 +1091,7 @@
         <div id="offerCodeFields">
           <div class="field"><label>Coupon Code (khaali chodo = auto-apply, code nahi chahiye)</label><input type="text" id="o_code" value="${offer ? (offer.code || "") : ""}" placeholder="e.g. GHAR20"></div>
           <label style="display:flex; align-items:center; gap:8px; font-size:12px; margin-bottom:10px;"><input type="checkbox" id="o_firstOrderOnly" ${offer && offer.firstOrderOnly ? "checked" : ""}> Sirf customer ke pehle order pe lagu ho</label>
+          <label style="display:flex; align-items:center; gap:8px; font-size:12px; margin-bottom:10px;"><input type="checkbox" id="o_hidden" ${offer && offer.hidden ? "checked" : ""}> Public list mein na dikhe (sirf code type karke hi apply hoga — private/WhatsApp-only codes ke liye)</label>
         </div>
         <label style="display:flex; align-items:center; gap:8px; font-size:12px; margin-bottom:10px;"><input type="checkbox" id="o_active" ${!offer || offer.active ? "checked" : ""}> Active (website pe dikhe)</label>
         <div class="modal-actions" style="margin-top:0;">
@@ -1138,6 +1140,7 @@
       freeItemQty: kind === "freeItem" ? (parseFloat(document.getElementById("o_freeItemQty").value) || 1) : 0,
       code: kind !== "info" ? document.getElementById("o_code").value.trim().toUpperCase() : "",
       firstOrderOnly: kind !== "info" ? document.getElementById("o_firstOrderOnly").checked : false,
+      hidden: kind !== "info" ? document.getElementById("o_hidden").checked : false,
       active: document.getElementById("o_active").checked,
     };
     const idx = settings.offers.findIndex(o => o.key === offer.key);
