@@ -236,6 +236,10 @@
           <input type="file" accept="image/*" id="f_qr" onchange="handlePhotoPick(this,'f_qrPreview')" style="display:none;">
         </div>
       </div>
+      <div class="field" id="f_commissionField">
+        <label>Fallback Platform Commission (%) — sirf un dishes ke liye use hoga jinme "Cook Price" set nahi hai (Menu mein). Agar har dish ki apni Cook Price set kar doge, yeh field zaroori nahi.</label>
+        <input type="number" id="f_commission" min="0" max="100" step="0.5" placeholder="e.g. 15">
+      </div>
       <div class="field">
         <label>Status</label>
         <select id="f_status">
@@ -287,8 +291,12 @@
         <input type="number" id="m_piecesPerPerson" min="1" placeholder="e.g. 3">
       </div>
       <div class="field">
-        <label>Price (₹)</label>
+        <label>Selling Price (₹) — customer isko dekhega aur pay karega</label>
         <input type="number" id="m_price" placeholder="e.g. 260">
+      </div>
+      <div class="field">
+        <label>Cook Price (₹, optional) — cook ne bataya itne ka banta hai, poora yeh amount unhe milega. Khaali chodo to cook ke flat commission % se calculate hoga.</label>
+        <input type="number" id="m_cookPrice" placeholder="e.g. 220 (agar selling price 260 hai to ₹40 aapka margin)">
       </div>
       <div class="field">
         <label>Status</label>
@@ -579,9 +587,10 @@
     if(currentTab === "menu"){ renderMenuList(); return; }
     if(currentTab === "orders"){ renderCalendar(); renderOrdersList(); return; }
     if(currentTab === "partners"){ renderPartnersList(); return; }
+    if(currentTab === "cooks"){ renderCooksList(); return; }
 
     const items = data[currentTab];
-    document.getElementById("sectionTitle").textContent = currentTab === "cooks" ? "Cooks" : "Riders";
+    document.getElementById("sectionTitle").textContent = "Riders";
 
     const activeCount = items.filter(i=>i.status==="active").length;
     document.getElementById("statRow").innerHTML = `
@@ -607,7 +616,6 @@
           <span class="badge ${item.status}">${item.status === "active" ? "Active" : "Inactive"}</span>
         </div>
         <div class="row-actions">
-          ${currentTab === "cooks" ? `<div class="icon-btn" onclick="viewCookProfile('${item.id}')"><i class="fa-solid fa-id-card"></i>Profile</div>` : ""}
           <a class="icon-btn" href="${waLink(item.phone)}" target="_blank" style="text-decoration:none; color:inherit;"><i class="fa-brands fa-whatsapp"></i>WhatsApp</a>
           <div class="icon-btn" onclick="openModal('${item.id}')"><i class="fa-solid fa-pen"></i>Edit</div>
           <div class="icon-btn" onclick="toggleStatus('${item.id}')"><i class="fa-solid fa-toggle-on"></i>${item.status === "active" ? "Deactivate" : "Activate"}</div>
@@ -1432,6 +1440,8 @@
     document.getElementById("f_photoPreview").style.display = "none";
     document.getElementById("f_qrPreview").style.display = "none";
     document.getElementById("f_qrField").style.display = currentTab === "cooks" ? "block" : "none";
+    document.getElementById("f_commissionField").style.display = currentTab === "cooks" ? "block" : "none";
+    document.getElementById("f_commission").value = "";
 
     if(id){
       const item = data[currentTab].find(i => i.id === id);
@@ -1440,6 +1450,7 @@
       document.getElementById("f_area").value = item.area;
       document.getElementById("f_phone").value = item.phone;
       document.getElementById("f_status").value = item.status;
+      document.getElementById("f_commission").value = item.commissionPercent || "";
       if(item.photoUrl){
         pendingPhoto.f_photo = item.photoUrl;
         const p = document.getElementById("f_photoPreview"); p.src = item.photoUrl; p.style.display = "block";
@@ -1470,6 +1481,7 @@
     document.getElementById("m_category").value = "thali";
     document.getElementById("m_unit").value = "kg";
     document.getElementById("m_price").value = "";
+    document.getElementById("m_cookPrice").value = "";
     document.getElementById("m_status").value = "active";
     document.getElementById("m_piecesPerPerson").value = "";
     document.getElementById("menuFormError").style.display = "none";
@@ -1495,6 +1507,7 @@
       document.getElementById("m_category").value = item.category;
       document.getElementById("m_unit").value = item.unit;
       document.getElementById("m_price").value = item.price;
+      document.getElementById("m_cookPrice").value = item.cookPrice || "";
       document.getElementById("m_status").value = item.status;
       document.getElementById("m_piecesPerPerson").value = item.piecesPerPerson || "";
       pendingItemPairs = new Set(item.pairsWith || []);
@@ -1608,7 +1621,13 @@
       : null;
 
     const payload = { name, area, phone, status, photoUrl: pendingPhoto.f_photo || "" };
-    if(currentTab === "cooks") payload.qrUrl = pendingPhoto.f_qr || "";
+    if(currentTab === "cooks"){
+      payload.qrUrl = pendingPhoto.f_qr || "";
+      payload.commissionPercent = parseFloat(document.getElementById("f_commission").value) || 0;
+      // Preserve settlement history when editing — same pattern as partners.
+      const existingCook = editingId ? data.cooks.find(i => i.id === editingId) : null;
+      payload.totalSettled = (existingCook && existingCook.totalSettled) || 0;
+    }
 
     if(!window.FIREBASE_CONFIGURED){
       if(editingId){
@@ -1661,6 +1680,8 @@
     // 0/blank means "no override" — the customer site then falls back to the
     // dish's category-level default (Settings > Dish Categories).
     const piecesPerPerson = (unit === "piece" && piecesPerPersonRaw) ? Math.max(1, parseInt(piecesPerPersonRaw) || 0) : 0;
+    const cookPriceRaw = parseFloat(document.getElementById("m_cookPrice").value);
+    const cookPrice = cookPriceRaw > 0 ? cookPriceRaw : 0; // 0 = "no override, use cook's flat commission %"
 
     const errorBox = document.getElementById("menuFormError");
     if(!name || !cook || !price || price <= 0){
@@ -1668,9 +1689,14 @@
       errorBox.style.display = "block";
       return;
     }
+    if(cookPrice > price){
+      errorBox.textContent = "Cook price selling price se zyada nahi ho sakti.";
+      errorBox.style.display = "block";
+      return;
+    }
     errorBox.style.display = "none";
 
-    const payload = { name, cook, type, category, unit, price, status, piecesPerPerson, photoUrl: pendingPhoto.m_photo || "", pairsWith: Array.from(pendingItemPairs) };
+    const payload = { name, cook, type, category, unit, price, cookPrice, status, piecesPerPerson, photoUrl: pendingPhoto.m_photo || "", pairsWith: Array.from(pendingItemPairs) };
 
     if(!window.FIREBASE_CONFIGURED){
       if(editingId){
@@ -1783,6 +1809,127 @@
   // How much commission a partner has earned so far: sums `total` across every
   // non-declined order whose referralCode matches this partner's code —
   // matching is trimmed + case-insensitive since customers type it by hand.
+  // Sums up what admin owes a cook. For each order, goes line-by-line through
+  // the actual dishes ordered (order.items) rather than just the order total,
+  // because different dishes can have different payout rules:
+  //   - If the dish has its own "Cook Price" set (Menu > edit dish), the cook
+  //     gets that fixed amount per unit regardless of the markup admin added
+  //     to the selling price — e.g. cook price ₹100/kg on a ₹120/kg biryani
+  //     means cook gets ₹100 worth no matter how many kg were ordered.
+  //   - Otherwise, falls back to the cook's flat platform-commission % taken
+  //     off that line's selling price.
+  // Quantity for a line is inferred as (line total / current menu price) —
+  // an approximation if the dish's price has changed since the order, same
+  // limitation other estimate-based figures in this app already carry.
+  function cookEarnings(cook){
+    let totalSales = 0, payoutOwed = 0;
+    const orderIds = new Set();
+    (data.orders || []).forEach(o => {
+      if(o.status === "Declined") return;
+      const items = Array.isArray(o.items) ? o.items : null;
+      if(items && items.length){
+        let matchedThisOrder = false;
+        items.forEach(lineItem => {
+          if(lineItem.cook !== cook.name) return;
+          const lineTotal = lineItem.total || 0;
+          totalSales += lineTotal;
+          matchedThisOrder = true;
+          const menuItem = data.menu.find(m => m.cook === cook.name && lineItem.name && m.name && lineItem.name.toLowerCase().includes(m.name.toLowerCase()));
+          if(menuItem && menuItem.cookPrice > 0 && menuItem.price > 0){
+            const qty = lineTotal / menuItem.price;
+            payoutOwed += qty * menuItem.cookPrice;
+          } else {
+            payoutOwed += lineTotal * (1 - (cook.commissionPercent || 0) / 100);
+          }
+        });
+        if(matchedThisOrder) orderIds.add(o.id);
+      } else if(o.cook === cook.name){
+        // Older/simple orders with no itemized breakdown — fall back to the
+        // whole order total with the cook's flat commission %.
+        totalSales += o.total || 0;
+        orderIds.add(o.id);
+        payoutOwed += (o.total || 0) * (1 - (cook.commissionPercent || 0) / 100);
+      }
+    });
+    return { orderCount: orderIds.size, totalSales: Math.round(totalSales), payoutOwed: Math.round(payoutOwed) };
+  }
+
+  function renderCooksList(){
+    document.getElementById("sectionTitle").textContent = "Cooks";
+    const items = data.cooks;
+    const activeCount = items.filter(i => i.status === "active").length;
+    const totalPendingPayout = items.reduce((sum, c) => {
+      const { payoutOwed } = cookEarnings(c);
+      return sum + Math.max(0, payoutOwed - (c.totalSettled || 0));
+    }, 0);
+
+    document.getElementById("statRow").innerHTML = `
+      <div class="stat"><b>${items.length}</b><span>Total Cooks</span></div>
+      <div class="stat"><b>${activeCount}</b><span>Active</span></div>
+      <div class="stat"><b>₹${totalPendingPayout}</b><span>Pending Payout</span></div>
+    `;
+
+    const list = document.getElementById("list");
+    if(items.length === 0){
+      list.innerHTML = `<div class="empty"><i class="fa-solid fa-inbox" style="font-size:22px; margin-bottom:8px; display:block;"></i>Koi cook nahi hai abhi. "Add" dabao.</div>`;
+      return;
+    }
+
+    list.innerHTML = items.map(item => {
+      const { orderCount, totalSales, payoutOwed } = cookEarnings(item);
+      const settled = item.totalSettled || 0;
+      const pending = Math.max(0, payoutOwed - settled);
+      return `
+      <div class="card">
+        <div class="card-top">
+          <div class="avatar">${item.photoUrl ? `<img src="${item.photoUrl}">` : initials(item.name)}</div>
+          <div class="info">
+            <div class="name">${item.name}</div>
+            <div class="meta"><i class="fa-solid fa-location-dot"></i> ${item.area} &nbsp;•&nbsp; ${item.phone} &nbsp;•&nbsp; ${item.commissionPercent || 0}% platform cut</div>
+          </div>
+          <span class="badge ${item.status}">${item.status === "active" ? "Active" : "Inactive"}</span>
+        </div>
+        <div style="display:flex; gap:10px; margin-top:10px; font-size:11px; color:var(--text-soft);">
+          <span><i class="fa-solid fa-receipt"></i> ${orderCount} orders</span>
+          <span><i class="fa-solid fa-indian-rupee-sign"></i> ₹${totalSales} sales</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px; background:var(--cream); border-radius:10px; padding:8px 12px;">
+          <span style="font-size:11.5px; color:var(--text-muted);">Pending payout</span>
+          <span style="font-size:14px; font-weight:700; color:${pending > 0 ? 'var(--chili)' : 'var(--sage)'};">₹${pending}</span>
+        </div>
+        <div class="row-actions">
+          <div class="icon-btn" onclick="viewCookProfile('${item.id}')"><i class="fa-solid fa-id-card"></i>Profile</div>
+          <a class="icon-btn" href="${waLink(item.phone)}" target="_blank" style="text-decoration:none; color:inherit;"><i class="fa-brands fa-whatsapp"></i>WhatsApp</a>
+          <div class="icon-btn" onclick="openModal('${item.id}')"><i class="fa-solid fa-pen"></i>Edit</div>
+          ${pending > 0 ? `<div class="icon-btn" onclick="markCookSettled('${item.id}')"><i class="fa-solid fa-check"></i>Settle ₹${pending}</div>` : ""}
+          <div class="icon-btn" onclick="toggleStatus('${item.id}')"><i class="fa-solid fa-toggle-on"></i>${item.status === "active" ? "Deactivate" : "Activate"}</div>
+          <div class="icon-btn danger" onclick="deleteEntry('${item.id}')"><i class="fa-solid fa-trash"></i>Delete</div>
+        </div>
+      </div>`;
+    }).join("");
+  }
+
+  // Marks currently-owed payout as paid — bumps totalSettled up to match what's
+  // owed right now, so "Pending payout" drops back to ₹0. Actual money still
+  // moves manually (UPI to the cook's Settlement QR, visible in their Profile) —
+  // this just records that it happened, same pattern as partner settlements.
+  function markCookSettled(id){
+    const item = data.cooks.find(i => i.id === id);
+    const { payoutOwed } = cookEarnings(item);
+    if(!confirm(`${item.name} ko ₹${payoutOwed - (item.totalSettled || 0)} settle karne ka confirm karo?`)) return;
+
+    if(!window.FIREBASE_CONFIGURED){
+      item.totalSettled = payoutOwed;
+      showToast("Settlement record ho gaya (local demo)");
+      render();
+      return;
+    }
+
+    db.collection("cooks").doc(id).update({ totalSettled: payoutOwed })
+      .then(() => showToast("Settlement record ho gaya ✓"))
+      .catch(err => showToast("Error: " + err.message));
+  }
+
   function partnerEarnings(partner){
     const code = (partner.referralCode || "").trim().toUpperCase();
     if(!code) return { orderCount: 0, totalSales: 0, commissionEarned: 0 };
