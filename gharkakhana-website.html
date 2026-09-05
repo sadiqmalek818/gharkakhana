@@ -1200,6 +1200,7 @@
     // is the chosen quantity in that dish's own unit (kg/piece/box/etc.).
     let manualComboQty = {};
     let paymentQrUrl = ""; // set live by admin from Settings tab; falls back to qr-code.jpg if empty
+    let sitePartners = []; // active Farmhouse/Club/Tour-Operator partners — for the "ya list se chuno" fallback
 
     if(window.FIREBASE_CONFIGURED){
       db.collection("menu").onSnapshot(snapshot => {
@@ -1213,6 +1214,9 @@
         renderMenuList(latestMenuItems);
         renderCookAccordion(latestMenuItems);
       }, err => console.error("Cooks load failed:", err));
+      db.collection("partners").onSnapshot(snapshot => {
+        sitePartners = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(p => p.status === "active");
+      }, err => console.error("Partners load failed:", err));
       db.collection("settings").doc("payment").onSnapshot(doc => {
         paymentQrUrl = doc.exists ? (doc.data().qrUrl || "") : "";
       }, err => console.error("Settings load failed:", err));
@@ -1457,7 +1461,17 @@
         </div>
         <div class="field">
           <label>Referral / Partner Code (agar farmhouse ya tour operator ne diya ho)</label>
-          <input type="text" id="f_referral" value="${referralCode}" placeholder="e.g. FARM-SHAHIBAG" style="text-transform:uppercase;">
+          <input type="text" id="f_referral" value="${referralCode}" placeholder="e.g. FARM-SHAHIBAG" style="text-transform:uppercase;" oninput="referralCode = this.value.trim().toUpperCase();">
+          ${sitePartners.length ? `
+            <div style="font-size:10.5px; color:var(--text-soft); margin-top:6px; margin-bottom:4px;">Code yaad nahi? Ya list se chuno:</div>
+            <div style="display:flex; flex-wrap:wrap; gap:6px;">
+              ${sitePartners.map(p => `
+                <div class="chip" style="cursor:pointer; ${referralCode === p.referralCode ? "background:var(--turmeric); color:var(--charcoal);" : ""}" onclick="selectReferralPartner('${p.referralCode}')">
+                  <i class="fa-solid ${p.type === "farmhouse" ? "fa-tree" : p.type === "tour_operator" ? "fa-bus" : "fa-champagne-glasses"}"></i> ${p.name}
+                </div>
+              `).join("")}
+            </div>
+          ` : ""}
         </div>
         <div class="fulfil-toggle">
           <div class="fulfil-option" id="opt-pickup" onclick="selectFulfil('pickup')">
@@ -1474,6 +1488,18 @@
         </div>
       `;
       if(fulfilment) selectFulfil(fulfilment);
+    }
+
+    // Tapping a partner chip fills the referral field for someone who knows
+    // which farmhouse/club/tour-operator sent them but doesn't have the exact
+    // code memorized — avoids typos vs typing it from memory. The QR-code
+    // route (Admin > Partners > QR button) is still the zero-effort primary
+    // path when the customer has that link; this is the fallback.
+    function selectReferralPartner(code){
+      referralCode = code;
+      const input = document.getElementById("f_referral");
+      if(input) input.value = code;
+      renderFulfilStep();
     }
 
     function selectFulfil(type){
