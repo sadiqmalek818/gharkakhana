@@ -318,8 +318,12 @@
         <select id="p_type"></select>
       </div>
       <div class="field">
-        <label>Area / Location</label>
+        <label>Area / Location (chhota naam, display ke liye)</label>
         <input type="text" id="p_area" placeholder="e.g. SG Highway, 30km">
+      </div>
+      <div class="field">
+        <label>Poora Delivery Address (customer ke "delivery address" field mein automatically bhar jayega jab wo is partner ko checkout pe select karega)</label>
+        <textarea id="p_address" rows="2" placeholder="e.g. Riverside Farmhouse, Sanand-Bavla Road, gate no. 3, near XYZ petrol pump"></textarea>
       </div>
       <div class="field">
         <label>Phone</label>
@@ -1523,6 +1527,7 @@
     document.getElementById("p_name").value = "";
     document.getElementById("p_type").value = settings.partnerTypes[0]?.key || "farmhouse";
     document.getElementById("p_area").value = "";
+    document.getElementById("p_address").value = "";
     document.getElementById("p_phone").value = "";
     document.getElementById("p_code").value = "";
     document.getElementById("p_code").dataset.touched = id ? "1" : "0";
@@ -1540,6 +1545,7 @@
       document.getElementById("p_name").value = item.name;
       document.getElementById("p_type").value = item.type || settings.partnerTypes[0]?.key || "farmhouse";
       document.getElementById("p_area").value = item.area || "";
+      document.getElementById("p_address").value = item.address || "";
       document.getElementById("p_phone").value = item.phone || "";
       document.getElementById("p_code").value = item.referralCode || "";
       document.getElementById("p_commission").value = item.commissionPercent || "";
@@ -1721,6 +1727,7 @@
     const name = document.getElementById("p_name").value.trim();
     const type = document.getElementById("p_type").value;
     const area = document.getElementById("p_area").value.trim();
+    const address = document.getElementById("p_address").value.trim();
     const phone = document.getElementById("p_phone").value.trim();
     const referralCode = document.getElementById("p_code").value.trim().toUpperCase();
     const commissionPercent = parseFloat(document.getElementById("p_commission").value);
@@ -1742,7 +1749,7 @@
     }
     errorBox.style.display = "none";
 
-    const payload = { name, type, area, phone, referralCode, commissionPercent, status, qrUrl: pendingPhoto.p_qr || "" };
+    const payload = { name, type, area, address, phone, referralCode, commissionPercent, status, qrUrl: pendingPhoto.p_qr || "" };
     // Preserve settlement history when editing — only saveEntry-style fields change here.
     if(editingId){
       const existing = data.partners.find(i => i.id === editingId);

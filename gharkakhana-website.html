@@ -1495,11 +1495,20 @@
     // code memorized — avoids typos vs typing it from memory. The QR-code
     // route (Admin > Partners > QR button) is still the zero-effort primary
     // path when the customer has that link; this is the fallback.
+    // Also auto-switches to Home Delivery and pre-fills the venue's own
+    // address — a farmhouse/club referral almost always means "deliver to
+    // that venue", so the customer shouldn't have to type the address they
+    // may not even know precisely. Still fully editable, in case they need
+    // to add a gate/room/tent number.
     function selectReferralPartner(code){
       referralCode = code;
-      const input = document.getElementById("f_referral");
-      if(input) input.value = code;
+      const partner = sitePartners.find(p => p.referralCode === code);
+      if(partner && partner.address){
+        fulfilment = "delivery";
+        deliveryAddress = partner.address;
+      }
       renderFulfilStep();
+      if(partner && partner.address) selectFulfil("delivery");
     }
 
     function selectFulfil(type){
