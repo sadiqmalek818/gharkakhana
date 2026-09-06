@@ -1328,15 +1328,17 @@
     let customerName = localStorage.getItem("gkk_customer_name") || "";
     let customerPhone = localStorage.getItem("gkk_customer_phone") || "";
     let deliveryAddress = localStorage.getItem("gkk_customer_address") || "";
-    let referralCode = localStorage.getItem("gkk_referral_code") || ""; // farmhouse/tour-operator partner code, optional
-    // A partner's QR code encodes ?ref=CODE in the URL — if present, it wins over
-    // whatever was saved before, so scanning a fresh QR always applies correctly.
+    // Referral/partner code is intentionally NOT remembered across visits —
+    // commission should only ever go to a partner because the customer
+    // scanned/selected them for THIS specific order, never because they
+    // (or someone else on the same phone) used that code once in the past.
+    // So this starts blank every fresh page load, and is only set from a
+    // QR link's ?ref= param (this visit) or a manual pick/type during
+    // checkout — never persisted to localStorage.
+    let referralCode = "";
     (function applyReferralFromUrl(){
       const urlRef = new URLSearchParams(window.location.search).get("ref");
-      if(urlRef){
-        referralCode = urlRef.trim().toUpperCase();
-        localStorage.setItem("gkk_referral_code", referralCode);
-      }
+      if(urlRef) referralCode = urlRef.trim().toUpperCase();
     })();
     const UPI_ID = "gharkakhana@upi"; // replace with real UPI ID before going live
 
@@ -1566,7 +1568,8 @@
       referralCode = (document.getElementById("f_referral").value || "").trim().toUpperCase();
       localStorage.setItem("gkk_customer_name", customerName);
       localStorage.setItem("gkk_customer_phone", customerPhone);
-      if(referralCode) localStorage.setItem("gkk_referral_code", referralCode);
+      // referralCode is deliberately NOT saved to localStorage — see the
+      // note where it's declared above.
       if(deliveryAddress) localStorage.setItem("gkk_customer_address", deliveryAddress);
       startOrderStatusWatcher();
       if(window.Notification && Notification.permission === "default"){
@@ -1951,6 +1954,10 @@
       appliedOffer = null;
       isFirstOrderCustomer = null;
       orderPersonCount = 1;
+      // Reset so the NEXT order requires its own deliberate scan/selection/typing —
+      // a referral shouldn't silently carry over to an unrelated later order
+      // in the same browsing session either.
+      referralCode = "";
       updateCartBar();
       closeCart();
     }
