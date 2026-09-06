@@ -1478,8 +1478,13 @@
 
     document.getElementById("m_name").value = "";
     document.getElementById("m_type").value = "veg";
-    document.getElementById("m_category").value = "thali";
-    document.getElementById("m_unit").value = "kg";
+    // Default to whichever category the admin actually has (first in their
+    // own list) instead of a hardcoded "thali" — that key stops existing the
+    // moment admin renames/removes the default categories, which silently
+    // left this dropdown blank (no option matched "thali", so nothing showed
+    // as selected).
+    document.getElementById("m_category").value = (settings.categories[0] && settings.categories[0].key) || "";
+    document.getElementById("m_unit").value = settings.units.some(u => u.key === "kg") ? "kg" : ((settings.units[0] && settings.units[0].key) || "");
     document.getElementById("m_price").value = "";
     document.getElementById("m_cookPrice").value = "";
     document.getElementById("m_status").value = "active";

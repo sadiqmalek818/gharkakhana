@@ -166,6 +166,7 @@
 <div class="tabs">
   <div class="tab active" data-tab="orders" onclick="switchTab('orders')"><i class="fa-solid fa-receipt"></i> Orders</div>
   <div class="tab" data-tab="menu" onclick="switchTab('menu')"><i class="fa-solid fa-list"></i> Menu</div>
+  <div class="tab" data-tab="earnings" onclick="switchTab('earnings')"><i class="fa-solid fa-indian-rupee-sign"></i> Earnings</div>
 </div>
 
 <div class="wrap">
@@ -291,7 +292,7 @@
       // Live listeners scoped to this cook only
       db.collection("menu").where("cook", "==", COOK_NAME).onSnapshot(snapshot => {
         menu = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        if(currentTab === "menu") render();
+        if(currentTab === "menu" || currentTab === "earnings") render();
       }, err => showConfigError(err));
       let cookOrdersLoadedOnce = false;
       db.collection("orders").where("cook", "==", COOK_NAME).onSnapshot(snapshot => {
@@ -302,12 +303,13 @@
           if(newConfirmed) playAlertSound();
         }
         orders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        if(currentTab === "orders") render();
+        if(currentTab === "orders" || currentTab === "earnings") render();
         cookOrdersLoadedOnce = true;
       }, err => showConfigError(err));
       db.collection("cooks").where("name", "==", COOK_NAME).limit(1).onSnapshot(snapshot => {
         cookProfile = snapshot.empty ? null : snapshot.docs[0].data();
         renderProfileBar();
+        if(currentTab === "earnings") render();
       }, err => showConfigError(err));
       db.collection("settings").doc("content").onSnapshot(doc => {
         adminWhatsapp = doc.exists ? (doc.data().whatsapp || "") : "";
@@ -366,12 +368,82 @@
     currentTab = tab;
     document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.tab === tab));
     document.getElementById("addBtn").style.display = tab === "menu" ? "inline-flex" : "none";
-    document.getElementById("sectionTitle").textContent = tab === "menu" ? "Menu" : "Orders";
+    document.getElementById("sectionTitle").textContent = tab === "menu" ? "Menu" : tab === "earnings" ? "Earnings" : "Orders";
     render();
   }
 
   function render(){
-    if(currentTab === "menu") renderMenu(); else renderOrders();
+    if(currentTab === "menu") renderMenu();
+    else if(currentTab === "earnings") renderEarnings();
+    else renderOrders();
+  }
+
+  // Same payout math as admin.html's cookEarnings() — per order LINE, not
+  // per whole order, since a dish with its own "Cook Price" (set by admin in
+  // Menu) pays that fixed amount regardless of the markup on the selling
+  // price; dishes without one fall back to this cook's flat commission %.
+  // Kept in sync manually with admin.html since they're separate static files.
+  function myEarnings(){
+    let totalSales = 0, payoutOwed = 0;
+    const orderIds = new Set();
+    const commissionPercent = (cookProfile && cookProfile.commissionPercent) || 0;
+    orders.forEach(o => {
+      if(o.status === "Declined") return;
+      const items = Array.isArray(o.items) ? o.items : null;
+      if(items && items.length){
+        let matchedThisOrder = false;
+        items.forEach(lineItem => {
+          if(lineItem.cook !== COOK_NAME) return;
+          const lineTotal = lineItem.total || 0;
+          totalSales += lineTotal;
+          matchedThisOrder = true;
+          const menuItem = menu.find(m => lineItem.name && m.name && lineItem.name.toLowerCase().includes(m.name.toLowerCase()));
+          if(menuItem && menuItem.cookPrice > 0 && menuItem.price > 0){
+            payoutOwed += (lineTotal / menuItem.price) * menuItem.cookPrice;
+          } else {
+            payoutOwed += lineTotal * (1 - commissionPercent / 100);
+          }
+        });
+        if(matchedThisOrder) orderIds.add(o.id);
+      } else {
+        totalSales += o.total || 0;
+        orderIds.add(o.id);
+        payoutOwed += (o.total || 0) * (1 - commissionPercent / 100);
+      }
+    });
+    const settled = (cookProfile && cookProfile.totalSettled) || 0;
+    return {
+      orderCount: orderIds.size,
+      totalSales: Math.round(totalSales),
+      payoutOwed: Math.round(payoutOwed),
+      settled,
+      pending: Math.max(0, Math.round(payoutOwed) - settled),
+    };
+  }
+
+  function renderEarnings(){
+    const e = myEarnings();
+    document.getElementById("statRow").innerHTML = `
+      <div class="stat"><b>${e.orderCount}</b><span>Total Orders</span></div>
+      <div class="stat"><b>₹${e.totalSales}</b><span>Total Sales</span></div>
+      <div class="stat"><b>₹${e.settled}</b><span>Ab tak mila</span></div>
+    `;
+    document.getElementById("list").innerHTML = `
+      <div class="card" style="text-align:center; padding:22px 16px;">
+        <div style="font-size:12px; color:var(--text-soft); margin-bottom:6px;">Aapko abhi kitna milna baaki hai</div>
+        <div style="font-size:34px; font-weight:800; color:${e.pending > 0 ? 'var(--chili)' : 'var(--sage)'};">₹${e.pending}</div>
+        <div style="font-size:11px; color:var(--text-soft); margin-top:10px;">
+          ${e.pending > 0
+            ? "Admin aapko is amount ka payment jald karega — apni Settlement QR upar profile mein set zaroor rakho."
+            : "Filhaal sab settle ho chuka hai — koi payment pending nahi hai."}
+        </div>
+      </div>
+      <div class="card" style="font-size:11.5px; color:var(--text-soft);">
+        <div style="display:flex; justify-content:space-between; margin-bottom:8px;"><span>Total sales (aapki dishes)</span><b style="color:var(--charcoal);">₹${e.totalSales}</b></div>
+        <div style="display:flex; justify-content:space-between; margin-bottom:8px;"><span>Ab tak settle ho chuka</span><b style="color:var(--sage);">₹${e.settled}</b></div>
+        <div style="display:flex; justify-content:space-between; padding-top:8px; border-top:1px solid var(--tan);"><span>Abhi pending</span><b style="color:${e.pending > 0 ? 'var(--chili)' : 'var(--sage)'};">₹${e.pending}</b></div>
+      </div>
+    `;
   }
 
   function renderMenu(){
