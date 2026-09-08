@@ -38,3 +38,39 @@ self.addEventListener("fetch", event => {
     fetch(event.request, { cache: "reload" }).catch(() => caches.match(event.request))
   );
 });
+// ---------------------------------------------------------------------------
+// ADD THIS TO YOUR EXISTING sw.js — don't replace the whole file, just paste
+// this at the end. It doesn't touch your existing caching code at all.
+// ---------------------------------------------------------------------------
+
+// Fires when a push arrives from the server — including while the site is
+// fully closed, as long as the browser/OS itself is running (this is what
+// makes it different from the in-app notifications used elsewhere).
+self.addEventListener("push", (event) => {
+  let data = { title: "GharKaKhana", body: "Naya update hai!", url: "/" };
+  try { data = event.data.json(); } catch (e) {}
+
+  event.waitUntil(
+    self.registration.showNotification(data.title, {
+      body: data.body,
+      icon: "icon-192.png",   // use whatever icon filename your manifest already has
+      badge: "icon-192.png",
+      data: { url: data.url || "/" },
+    })
+  );
+});
+
+// Tapping the notification opens (or focuses) the site instead of just
+// dismissing it.
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const targetUrl = (event.notification.data && event.notification.data.url) || "/";
+  event.waitUntil(
+    clients.matchAll({ type: "window", includeUncontrolled: true }).then((windowClients) => {
+      for (const client of windowClients) {
+        if (client.url.includes(targetUrl) && "focus" in client) return client.focus();
+      }
+      if (clients.openWindow) return clients.openWindow(targetUrl);
+    })
+  );
+});
