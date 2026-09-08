@@ -1201,6 +1201,7 @@
     let manualComboQty = {};
     let paymentQrUrl = ""; // set live by admin from Settings tab; falls back to qr-code.jpg if empty
     let sitePartners = []; // active Farmhouse/Club/Tour-Operator partners — for the "ya list se chuno" fallback
+    let offerSpotlightChecked = false; // ensures the daily offer popup only ever runs once per catalog load
 
     if(window.FIREBASE_CONFIGURED){
       db.collection("menu").onSnapshot(snapshot => {
@@ -1233,6 +1234,7 @@
         initLocalityDisplay();
         siteOffers = (d.offers && d.offers.length) ? d.offers : DEFAULT_OFFERS;
         renderOffers(siteOffers);
+        if(!offerSpotlightChecked){ offerSpotlightChecked = true; maybeShowDailyOfferSpotlight(); }
         siteUnits = (d.units && d.units.length) ? d.units : DEFAULT_UNITS;
         siteDeliveryRule = d.deliveryRule || DEFAULT_DELIVERY_RULE;
         // Delivery charge (shown at Payment step) depends on this rule, so if
@@ -1341,6 +1343,43 @@
       if(urlRef) referralCode = urlRef.trim().toUpperCase();
     })();
     const UPI_ID = "gharkakhana@upi"; // replace with real UPI ID before going live
+    // Public key only — safe to be visible in client code, this is how Web
+    // Push key-pairs work (unlike the Groq key, this one is MEANT to be public).
+    const VAPID_PUBLIC_KEY = "BN1uvTKK3wCtscGGHikrYalEKyZjxrABKZ7L8RG-zpCjiwtYcyrOUaQS-AVbekgKV2xjQwFL1bWpRDO798078u8";
+    const PUSH_ENDPOINT_URL = "https://gharkakhana-kappa.vercel.app/api/save-subscription";
+
+    function urlBase64ToUint8Array(base64String){
+      const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+      const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+      const rawData = atob(base64);
+      return Uint8Array.from([...rawData].map(c => c.charCodeAt(0)));
+    }
+
+    // Real push subscription — this is what lets a notification reach the
+    // customer even with the site fully closed (unlike the in-app toasts
+    // used elsewhere in this file, which need the tab/app actually open).
+    // Safe to call repeatedly; browsers return the existing subscription if
+    // one is already active instead of creating duplicates.
+    async function subscribeToPush(){
+      if(!("serviceWorker" in navigator) || !("PushManager" in window)) return;
+      try{
+        const reg = await navigator.serviceWorker.ready;
+        let sub = await reg.pushManager.getSubscription();
+        if(!sub){
+          const perm = await Notification.requestPermission();
+          if(perm !== "granted") return;
+          sub = await reg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+          });
+        }
+        await fetch(PUSH_ENDPOINT_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ subscription: sub, customerPhone: customerPhone || "" }),
+        });
+      } catch(e){ console.warn("Push subscribe failed:", e); }
+    }
 
     function addToCart(btn){
       try{
@@ -1575,6 +1614,7 @@
       if(window.Notification && Notification.permission === "default"){
         Notification.requestPermission().catch(() => {});
       }
+      subscribeToPush(); // asks for real push permission right here — this is a user-gesture moment (they just tapped a button), which browsers are far less likely to block than an on-load prompt
       renderMealTimeStep();
     }
 
@@ -1764,17 +1804,41 @@
     // The BIG center-screen celebration — this is the fancy one, distinct
     // from the small everyday showToast() used for routine messages
     // elsewhere in the app. Reserved for an actual successful coupon apply.
-    function showCouponSuccessBadge(offer, amount){
+    // Generic version of the big celebratory card — used both for a
+    // successful coupon apply AND for spotlighting an active offer when the
+    // customer opens the app (same visual, different trigger).
+    function showBigPromoCard(emoji, title, sub){
       const el = document.createElement("div");
       el.className = "coupon-success-overlay";
-      const isFree = offer.kind === "freeItem";
       el.innerHTML = `
-        <span class="cs-emoji">${isFree ? "🎁" : "🎉"}</span>
-        <div class="cs-title">${isFree ? "FREE!" : `₹${amount} OFF`}</div>
-        <div class="cs-sub">${offer.label}</div>
+        <span class="cs-emoji">${emoji}</span>
+        <div class="cs-title">${title}</div>
+        <div class="cs-sub">${sub}</div>
       `;
       document.body.appendChild(el);
       setTimeout(() => el.remove(), 2400);
+      return el;
+    }
+
+    function showCouponSuccessBadge(offer, amount){
+      const isFree = offer.kind === "freeItem";
+      showBigPromoCard(isFree ? "🎁" : "🎉", isFree ? "FREE!" : `₹${amount} OFF`, offer.label);
+    }
+
+    // Spotlights today's best active offer with the same big card, once per
+    // day per browser — shown automatically when the customer opens the
+    // site (this is the "app open" half of the notification ask; the
+    // "app closed" half needs real push notifications, set up separately).
+    function maybeShowDailyOfferSpotlight(){
+      const todayKey = `gkk_offer_spotlight_${todayISO()}`;
+      if(localStorage.getItem(todayKey)) return;
+      const best = (siteOffers || []).find(o => offerIsEligible(o) && !o.hidden);
+      if(!best) return;
+      localStorage.setItem(todayKey, "1");
+      setTimeout(() => {
+        const isFree = best.kind === "freeItem";
+        showBigPromoCard(isFree ? "🎁" : "🔥", isFree ? `${best.freeItemName} FREE!` : best.label, best.sub || (best.code ? `Code: ${best.code}` : "Abhi order karo"));
+      }, 1200); // small delay so it doesn't fight with the page's own load-in
     }
 
     function removeAppliedOffer(){
@@ -2395,6 +2459,11 @@
         .catch(() => showToast("Cancel nahi ho paya, dobara try karo"));
     }
 
+    function toggleOrderBill(idx){
+      const el = document.getElementById(`orderBill-${idx}`);
+      if(el) el.style.display = el.style.display === "none" ? "block" : "none";
+    }
+
     const STATUS_LABEL = { Pending: "Admin approval ka wait", Confirmed: "Cook ko mil gaya", Cooking: "Ban raha hai", Declined: "Cancel ho gaya" };
     function renderProfileOrdersList(){
       const el = document.getElementById("profileOrdersList");
@@ -2408,11 +2477,21 @@
               <div style="font-size:12.5px; font-weight:600;">${o.item}</div>
               <div style="font-size:10px; font-weight:700; color:${o.status === "Declined" ? "var(--chili)" : "var(--sage)"}; white-space:nowrap;">${STATUS_LABEL[o.status] || o.status || ""}</div>
             </div>
-            <div style="font-size:10.5px; color:var(--text-soft); margin-top:3px;">${o.cook} • ${o.date} • ₹${o.total}</div>
+            <div style="font-size:10.5px; color:var(--text-soft); margin-top:3px;"><i class="fa-solid fa-calendar-day"></i> ${o.date} &nbsp;•&nbsp; ${o.meal || ""} &nbsp;•&nbsp; ${o.cook} &nbsp;•&nbsp; ₹${o.total}</div>
             ${o.isAdvance ? `<div style="display:inline-flex; align-items:center; gap:4px; background:#FFF4E0; color:var(--turmeric); border-radius:6px; padding:2px 7px; font-size:9.5px; font-weight:700; margin-top:5px;"><i class="fa-solid fa-calendar-clock"></i> ADVANCE ORDER</div>` : ""}
             <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;">
+              <button class="btn btn-ghost btn-sm" onclick="toggleOrderBill(${idx})"><i class="fa-solid fa-receipt"></i> Bill dekho</button>
               ${o.items ? `<button class="btn btn-ghost btn-sm" onclick="reorderPastOrder(${idx})"><i class="fa-solid fa-rotate-right"></i> Reorder karo</button>` : ""}
               ${isCancellableByCustomer(o) ? `<button class="btn btn-ghost btn-sm" style="color:var(--chili); border-color:#F3C9C0;" onclick="cancelOrderByCustomer('${o.id}')"><i class="fa-solid fa-ban"></i> Cancel karo</button>` : ""}
+            </div>
+            <div id="orderBill-${idx}" style="display:none; margin-top:10px; padding-top:10px; border-top:1px dashed var(--tan); font-size:11px;">
+              ${(o.items || []).map(li => `<div style="display:flex; justify-content:space-between; margin-bottom:5px; gap:8px;"><span>${li.name}<br><span style="font-size:9.5px; color:var(--text-soft);">${li.meta || ""}</span></span><span style="white-space:nowrap;">₹${li.total}</span></div>`).join("") || `<div style="display:flex; justify-content:space-between; margin-bottom:5px;"><span>${o.item}</span><span>₹${o.subtotal ?? o.total}</span></div>`}
+              <div style="border-top:1px solid var(--tan); margin-top:6px; padding-top:6px;">
+                <div style="display:flex; justify-content:space-between; margin-bottom:3px;"><span>Subtotal</span><span>₹${o.subtotal ?? o.total}</span></div>
+                ${o.discount > 0 ? `<div style="display:flex; justify-content:space-between; margin-bottom:3px; color:var(--sage);"><span>${o.offerApplied || "Discount"}</span><span>-₹${o.discount}</span></div>` : ""}
+                ${o.deliveryCharge > 0 ? `<div style="display:flex; justify-content:space-between; margin-bottom:3px;"><span><i class="fa-solid fa-motorcycle"></i> Delivery Charge</span><span>₹${o.deliveryCharge}</span></div>` : ""}
+                <div style="display:flex; justify-content:space-between; font-weight:700; margin-top:4px;"><span>Total</span><span>₹${o.total}</span></div>
+              </div>
             </div>
           </div>
         `).join("");
@@ -2826,7 +2905,9 @@ ORDER TIMINGS: ${occasionLine || "N/A"}`;
     // Register service worker (needs HTTPS hosting — won't run from a local file)
     if("serviceWorker" in navigator){
       window.addEventListener("load", () => {
-        navigator.serviceWorker.register("sw.js").catch(() => {});
+        navigator.serviceWorker.register("sw.js")
+          .then(() => { if(Notification.permission === "granted") subscribeToPush(); })
+          .catch(() => {});
       });
     }
 

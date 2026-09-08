@@ -861,6 +861,24 @@
       </div>
 
       <div class="settings-card">
+        <h3><i class="fa-solid fa-bell"></i> Push Notification Bhejo</h3>
+        <p>Sab subscribed customers ko turant notification jayega — chahe unhone app/site band hi kyun na kiya ho. (Ek baar ka setup chahiye — Vercel par naye functions + env variables; Claude se poocho agar setup abhi nahi kiya.)</p>
+        <div class="field">
+          <label>Admin Secret (jo Vercel env variable NOTIFY_SECRET mein set kiya tha)</label>
+          <input type="password" id="notify_secret" placeholder="Secret daalo">
+        </div>
+        <div class="field">
+          <label>Title</label>
+          <input type="text" id="notify_title" placeholder="e.g. Sunday Special!">
+        </div>
+        <div class="field">
+          <label>Message</label>
+          <input type="text" id="notify_body" placeholder="e.g. Aaj Free Delivery + 20% OFF — abhi order karo!">
+        </div>
+        <button class="btn btn-primary" style="width:100%;" onclick="sendPushNotification()"><i class="fa-solid fa-paper-plane"></i> Sab Customers Ko Bhejo</button>
+      </div>
+
+      <div class="settings-card">
         <h3><i class="fa-solid fa-file-lines"></i> Website Footer (Hamare Baare Mein, Privacy, Contact)</h3>
         <p>Ye text customer website ke footer mein dikhega.</p>
         <div class="field">
@@ -949,6 +967,28 @@
       .then(() => showToast("Update ho gaya ✓"))
       .catch(err => showToast("Error: " + err.message));
     renderSettings();
+  }
+
+  function sendPushNotification(){
+    const secret = document.getElementById("notify_secret").value.trim();
+    const title = document.getElementById("notify_title").value.trim();
+    const body = document.getElementById("notify_body").value.trim();
+    if(!secret || !title || !body){
+      showToast("Secret, Title, aur Message teeno bharo");
+      return;
+    }
+    fetch("https://gharkakhana-kappa.vercel.app/api/send-notification", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ secret, title, body, url: "/gharkakhana-website.html" }),
+    })
+      .then(r => r.json())
+      .then(data => {
+        if(data.error){ showToast("Error: " + data.error); return; }
+        showToast(`Bhej diya ✓ (${data.sent} customers ko mila, ${data.failed} fail)`);
+        document.getElementById("notify_body").value = "";
+      })
+      .catch(err => showToast("Bhejne mein error: " + err.message));
   }
 
   function saveDeliveryRule(){
@@ -1371,7 +1411,7 @@
         <div style="display:flex; align-items:center; gap:8px; font-weight:700; font-size:12.5px; margin-bottom:6px;">
           <i class="fa-solid fa-calendar-clock" style="color:var(--turmeric);"></i> Kal (${tomorrowISO}) ke ${tomorrowOrders.length} Advance Order${tomorrowOrders.length > 1 ? "s" : ""} — taiyari shuru kar do
         </div>
-        <div style="font-size:11px; color:var(--text-soft);">${tomorrowOrders.map(o => `${o.item} — ${o.customer} (${o.cook})`).join(" • ")}</div>
+        <div style="font-size:11px; color:var(--text-soft);">${tomorrowOrders.map(o => `${o.item} — ${o.customer} (${o.cook}) • ${o.meal}`).join(" • ")}</div>
         <div style="margin-top:8px;"><span class="btn btn-ghost btn-sm" onclick="selectDate('${tomorrowISO}')">Dekho</span></div>
       </div>
     ` : "";
@@ -1388,7 +1428,8 @@
             <div class="order-item">${o.item}${o.meal === "Urgent" ? '<span class="urgent-tag">URGENT</span>' : ""}</div>
             ${o.isAdvance ? `<div style="display:inline-flex; align-items:center; gap:4px; background:#FFF4E0; color:var(--turmeric); border-radius:6px; padding:2px 7px; font-size:9.5px; font-weight:700; margin:4px 0;"><i class="fa-solid fa-calendar-clock"></i> ADVANCE ORDER — ${o.date}</div>` : ""}
             <div class="order-meta">${o.customer} • ${o.cook} • ${o.area}</div>
-            <div class="order-meta"><i class="fa-solid ${o.type === "Pickup" ? "fa-store" : "fa-motorcycle"}"></i> ${o.type} • <i class="fa-solid ${o.meal === "Lunch" ? "fa-sun" : o.meal === "Dinner" ? "fa-moon" : o.meal === "Urgent" ? "fa-bolt" : "fa-utensils"}"></i> ${o.meal} • #${o.id}</div>
+            <div class="order-meta" style="font-weight:700; color:var(--charcoal);"><i class="fa-solid fa-calendar-day"></i> ${o.date} &nbsp;•&nbsp; <i class="fa-solid ${o.meal === "Lunch" ? "fa-sun" : o.meal === "Dinner" ? "fa-moon" : o.meal === "Urgent" ? "fa-bolt" : "fa-utensils"}"></i> ${o.meal}</div>
+            <div class="order-meta"><i class="fa-solid ${o.type === "Pickup" ? "fa-store" : "fa-motorcycle"}"></i> ${o.type} • #${o.id}</div>
             ${o.orderGroupId ? `<div class="order-meta" style="color:var(--turmeric);"><i class="fa-solid fa-layer-group"></i> Apna Thaal combo — group #${o.orderGroupId} (alag cooks ke liye alag ticket)</div>` : ""}
             ${o.discount > 0 ? `<div class="order-meta" style="color:var(--sage);"><i class="fa-solid fa-tag"></i> ${o.offerApplied || "Offer"} — -₹${o.discount} (₹${o.subtotal} → ₹${o.total})</div>` : ""}
             ${o.deliveryCharge > 0 ? `<div class="order-meta"><i class="fa-solid fa-motorcycle"></i> Delivery charge (${o.personCount || 1} log) — ₹${o.deliveryCharge}, bill total mein shaamil</div>` : ""}
@@ -1827,37 +1868,51 @@
   // Quantity for a line is inferred as (line total / current menu price) —
   // an approximation if the dish's price has changed since the order, same
   // limitation other estimate-based figures in this app already carry.
+  function toggleEarningsBreakdown(key){
+    const el = document.getElementById(`breakdown-${key}`);
+    if(el) el.style.display = el.style.display === "none" ? "block" : "none";
+  }
+
   function cookEarnings(cook){
     let totalSales = 0, payoutOwed = 0;
     const orderIds = new Set();
+    const perOrder = {};
     (data.orders || []).forEach(o => {
       if(o.status === "Declined") return;
       const items = Array.isArray(o.items) ? o.items : null;
       if(items && items.length){
-        let matchedThisOrder = false;
+        let matchedThisOrder = false, orderPayout = 0, orderSales = 0;
         items.forEach(lineItem => {
           if(lineItem.cook !== cook.name) return;
           const lineTotal = lineItem.total || 0;
-          totalSales += lineTotal;
+          orderSales += lineTotal;
           matchedThisOrder = true;
           const menuItem = data.menu.find(m => m.cook === cook.name && lineItem.name && m.name && lineItem.name.toLowerCase().includes(m.name.toLowerCase()));
           if(menuItem && menuItem.cookPrice > 0 && menuItem.price > 0){
             const qty = lineTotal / menuItem.price;
-            payoutOwed += qty * menuItem.cookPrice;
+            orderPayout += qty * menuItem.cookPrice;
           } else {
-            payoutOwed += lineTotal * (1 - (cook.commissionPercent || 0) / 100);
+            orderPayout += lineTotal * (1 - (cook.commissionPercent || 0) / 100);
           }
         });
-        if(matchedThisOrder) orderIds.add(o.id);
+        if(matchedThisOrder){
+          orderIds.add(o.id);
+          totalSales += orderSales;
+          payoutOwed += orderPayout;
+          perOrder[o.id] = { date: o.date, meal: o.meal, item: o.item, status: o.status, payout: Math.round(orderPayout) };
+        }
       } else if(o.cook === cook.name){
         // Older/simple orders with no itemized breakdown — fall back to the
         // whole order total with the cook's flat commission %.
+        const orderPayout = (o.total || 0) * (1 - (cook.commissionPercent || 0) / 100);
         totalSales += o.total || 0;
         orderIds.add(o.id);
-        payoutOwed += (o.total || 0) * (1 - (cook.commissionPercent || 0) / 100);
+        payoutOwed += orderPayout;
+        perOrder[o.id] = { date: o.date, meal: o.meal, item: o.item, status: o.status, payout: Math.round(orderPayout) };
       }
     });
-    return { orderCount: orderIds.size, totalSales: Math.round(totalSales), payoutOwed: Math.round(payoutOwed) };
+    const breakdown = Object.values(perOrder).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+    return { orderCount: orderIds.size, totalSales: Math.round(totalSales), payoutOwed: Math.round(payoutOwed), breakdown };
   }
 
   function renderCooksList(){
@@ -1882,7 +1937,7 @@
     }
 
     list.innerHTML = items.map(item => {
-      const { orderCount, totalSales, payoutOwed } = cookEarnings(item);
+      const { orderCount, totalSales, payoutOwed, breakdown } = cookEarnings(item);
       const settled = item.totalSettled || 0;
       const pending = Math.max(0, payoutOwed - settled);
       return `
@@ -1911,6 +1966,17 @@
           <div class="icon-btn" onclick="toggleStatus('${item.id}')"><i class="fa-solid fa-toggle-on"></i>${item.status === "active" ? "Deactivate" : "Activate"}</div>
           <div class="icon-btn danger" onclick="deleteEntry('${item.id}')"><i class="fa-solid fa-trash"></i>Delete</div>
         </div>
+        ${breakdown.length ? `
+          <div style="margin-top:8px;"><span class="icon-btn" onclick="toggleEarningsBreakdown('cook-${item.id}')"><i class="fa-solid fa-list"></i>Date/Meal ke hisaab se breakdown dekho</span></div>
+          <div id="breakdown-cook-${item.id}" style="display:none; margin-top:8px;">
+            ${breakdown.map(b => `
+              <div style="display:flex; justify-content:space-between; align-items:center; padding:7px 10px; border-bottom:1px solid var(--tan); font-size:11px;">
+                <div><b>${b.date}</b> &nbsp;•&nbsp; ${b.meal} &nbsp;•&nbsp; <span style="color:var(--text-soft);">${b.item}</span></div>
+                <div style="text-align:right;"><b>₹${b.payout}</b><br><span style="font-size:9px; color:var(--text-soft);">${b.status}</span></div>
+              </div>
+            `).join("")}
+          </div>
+        ` : ""}
       </div>`;
     }).join("");
   }
@@ -1938,13 +2004,16 @@
 
   function partnerEarnings(partner){
     const code = (partner.referralCode || "").trim().toUpperCase();
-    if(!code) return { orderCount: 0, totalSales: 0, commissionEarned: 0 };
+    if(!code) return { orderCount: 0, totalSales: 0, commissionEarned: 0, breakdown: [] };
     const matching = (data.orders || []).filter(o =>
       (o.referralCode || "").trim().toUpperCase() === code && o.status !== "Declined"
     );
     const totalSales = matching.reduce((s, o) => s + (o.total || 0), 0);
     const commissionEarned = Math.round(totalSales * (partner.commissionPercent || 0) / 100);
-    return { orderCount: matching.length, totalSales, commissionEarned };
+    const breakdown = matching
+      .map(o => ({ date: o.date, meal: o.meal, item: o.item, status: o.status, commission: Math.round((o.total || 0) * (partner.commissionPercent || 0) / 100) }))
+      .sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+    return { orderCount: matching.length, totalSales, commissionEarned, breakdown };
   }
 
   function renderPartnersList(){
@@ -1969,7 +2038,7 @@
     }
 
     list.innerHTML = items.map(item => {
-      const { orderCount, totalSales, commissionEarned } = partnerEarnings(item);
+      const { orderCount, totalSales, commissionEarned, breakdown } = partnerEarnings(item);
       const settled = item.totalSettled || 0;
       const pending = Math.max(0, commissionEarned - settled);
       // Look up the live label from Settings > Partner Types — falls back to
@@ -2002,6 +2071,17 @@
           ${pending > 0 ? `<div class="icon-btn" onclick="markPartnerSettled('${item.id}')"><i class="fa-solid fa-check"></i>Settle ₹${pending}</div>` : ""}
           <div class="icon-btn danger" onclick="deleteEntry('${item.id}')"><i class="fa-solid fa-trash"></i>Delete</div>
         </div>
+        ${breakdown.length ? `
+          <div style="margin-top:8px;"><span class="icon-btn" onclick="toggleEarningsBreakdown('partner-${item.id}')"><i class="fa-solid fa-list"></i>Date/Meal ke hisaab se breakdown dekho</span></div>
+          <div id="breakdown-partner-${item.id}" style="display:none; margin-top:8px;">
+            ${breakdown.map(b => `
+              <div style="display:flex; justify-content:space-between; align-items:center; padding:7px 10px; border-bottom:1px solid var(--tan); font-size:11px;">
+                <div><b>${b.date}</b> &nbsp;•&nbsp; ${b.meal} &nbsp;•&nbsp; <span style="color:var(--text-soft);">${b.item}</span></div>
+                <div style="text-align:right;"><b>₹${b.commission}</b><br><span style="font-size:9px; color:var(--text-soft);">${b.status}</span></div>
+              </div>
+            `).join("")}
+          </div>
+        ` : ""}
       </div>`;
     }).join("");
   }
