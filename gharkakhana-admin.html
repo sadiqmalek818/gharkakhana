@@ -980,7 +980,7 @@
     fetch("https://gharkakhana-kappa.vercel.app/api/send-notification", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ secret, title, body, url: "/gharkakhana-website.html" }),
+      body: JSON.stringify({ secret, title, body, url: "/gharkakhana/gharkakhana-website.html" }),
     })
       .then(r => r.json())
       .then(data => {
