@@ -386,38 +386,48 @@
   function myEarnings(){
     let totalSales = 0, payoutOwed = 0;
     const orderIds = new Set();
+    // Per-order breakdown — so the cook can see exactly WHICH date/meal each
+    // part of their pending payout belongs to, not just one lump number.
+    const perOrder = {};
     const commissionPercent = (cookProfile && cookProfile.commissionPercent) || 0;
     orders.forEach(o => {
       if(o.status === "Declined") return;
       const items = Array.isArray(o.items) ? o.items : null;
+      let orderSales = 0, orderPayout = 0, matched = false;
       if(items && items.length){
-        let matchedThisOrder = false;
         items.forEach(lineItem => {
           if(lineItem.cook !== COOK_NAME) return;
           const lineTotal = lineItem.total || 0;
-          totalSales += lineTotal;
-          matchedThisOrder = true;
+          orderSales += lineTotal;
+          matched = true;
           const menuItem = menu.find(m => lineItem.name && m.name && lineItem.name.toLowerCase().includes(m.name.toLowerCase()));
           if(menuItem && menuItem.cookPrice > 0 && menuItem.price > 0){
-            payoutOwed += (lineTotal / menuItem.price) * menuItem.cookPrice;
+            orderPayout += (lineTotal / menuItem.price) * menuItem.cookPrice;
           } else {
-            payoutOwed += lineTotal * (1 - commissionPercent / 100);
+            orderPayout += lineTotal * (1 - commissionPercent / 100);
           }
         });
-        if(matchedThisOrder) orderIds.add(o.id);
       } else {
-        totalSales += o.total || 0;
+        orderSales = o.total || 0;
+        matched = true;
+        orderPayout = orderSales * (1 - commissionPercent / 100);
+      }
+      if(matched){
         orderIds.add(o.id);
-        payoutOwed += (o.total || 0) * (1 - commissionPercent / 100);
+        totalSales += orderSales;
+        payoutOwed += orderPayout;
+        perOrder[o.id] = { date: o.date, meal: o.meal, item: o.item, status: o.status, sales: Math.round(orderSales), payout: Math.round(orderPayout) };
       }
     });
     const settled = (cookProfile && cookProfile.totalSettled) || 0;
+    const breakdown = Object.values(perOrder).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
     return {
       orderCount: orderIds.size,
       totalSales: Math.round(totalSales),
       payoutOwed: Math.round(payoutOwed),
       settled,
       pending: Math.max(0, Math.round(payoutOwed) - settled),
+      breakdown,
     };
   }
 
@@ -443,6 +453,21 @@
         <div style="display:flex; justify-content:space-between; margin-bottom:8px;"><span>Ab tak settle ho chuka</span><b style="color:var(--sage);">₹${e.settled}</b></div>
         <div style="display:flex; justify-content:space-between; padding-top:8px; border-top:1px solid var(--tan);"><span>Abhi pending</span><b style="color:${e.pending > 0 ? 'var(--chili)' : 'var(--sage)'};">₹${e.pending}</b></div>
       </div>
+      <div style="font-weight:700; font-size:13px; margin:16px 4px 8px;">Kis order ka kitna — date/meal ke hisaab se</div>
+      ${e.breakdown.length === 0 ? `<div class="card" style="text-align:center; color:var(--text-soft); font-size:12px;">Abhi koi order nahi hai.</div>` : e.breakdown.map(b => `
+        <div class="card" style="padding:12px 14px;">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div>
+              <div style="font-weight:700; font-size:12.5px;"><i class="fa-solid fa-calendar-day"></i> ${b.date} &nbsp;•&nbsp; <i class="fa-solid ${b.meal === 'Lunch' ? 'fa-sun' : b.meal === 'Dinner' ? 'fa-moon' : b.meal === 'Urgent' ? 'fa-bolt' : 'fa-utensils'}"></i> ${b.meal}</div>
+              <div style="font-size:11px; color:var(--text-soft); margin-top:3px;">${b.item}</div>
+            </div>
+            <div style="text-align:right;">
+              <div style="font-weight:800; font-size:14px; color:var(--sage);">₹${b.payout}</div>
+              <div style="font-size:9.5px; color:var(--text-soft);">${b.status}</div>
+            </div>
+          </div>
+        </div>
+      `).join("")}
     `;
   }
 
@@ -507,7 +532,7 @@
         <div style="display:flex; align-items:center; gap:8px; font-weight:700; font-size:12.5px; margin-bottom:6px;">
           <i class="fa-solid fa-calendar-clock" style="color:var(--turmeric);"></i> Kal (${tomorrowISO}) ke ${tomorrowOrders.length} Advance Order${tomorrowOrders.length > 1 ? "s" : ""} — taiyari shuru kar do
         </div>
-        <div style="font-size:11px; color:var(--text-soft);">${tomorrowOrders.map(o => o.item).join(" • ")}</div>
+        <div style="font-size:11px; color:var(--text-soft);">${tomorrowOrders.map(o => `${o.item} • ${o.meal}`).join(" • ")}</div>
       </div>
     ` : "";
 
@@ -532,7 +557,8 @@
               ${o.meal === "Urgent" ? '<span class="badge" style="background:var(--chili); color:white; margin-left:6px;">URGENT</span>' : ''}
             </div>
             ${o.date !== today ? `<div style="display:inline-flex; align-items:center; gap:4px; background:#FFF4E0; color:var(--turmeric); border-radius:6px; padding:2px 7px; font-size:9.5px; font-weight:700; margin:4px 0;"><i class="fa-solid fa-calendar-clock"></i> ADVANCE ORDER — ${o.date}</div>` : ""}
-            <div class="order-cust">${o.customer} • ${o.area} • <i class="fa-solid ${o.type === 'Pickup' ? 'fa-store' : 'fa-motorcycle'}"></i> ${o.type} • <i class="fa-solid ${o.meal === 'Lunch' ? 'fa-sun' : o.meal === 'Dinner' ? 'fa-moon' : o.meal === 'Urgent' ? 'fa-bolt' : 'fa-utensils'}"></i> ${o.meal} • #${o.id}</div>
+            <div class="order-cust" style="font-weight:700; color:var(--charcoal); font-size:11.5px;"><i class="fa-solid fa-calendar-day"></i> ${o.date} &nbsp;•&nbsp; <i class="fa-solid ${o.meal === 'Lunch' ? 'fa-sun' : o.meal === 'Dinner' ? 'fa-moon' : o.meal === 'Urgent' ? 'fa-bolt' : 'fa-utensils'}"></i> ${o.meal}</div>
+            <div class="order-cust">${o.customer} • ${o.area} • <i class="fa-solid ${o.type === 'Pickup' ? 'fa-store' : 'fa-motorcycle'}"></i> ${o.type} • #${o.id}</div>
           </div>
           <span class="badge ${o.status === 'Confirmed' ? 'inactive' : 'active'}">${o.status === "Confirmed" ? "Naya Order" : o.status}</span>
         </div>
