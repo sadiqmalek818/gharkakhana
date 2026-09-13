@@ -1967,8 +1967,11 @@
           <div class="icon-btn danger" onclick="deleteEntry('${item.id}')"><i class="fa-solid fa-trash"></i>Delete</div>
         </div>
         ${breakdown.length ? `
-          <div style="margin-top:8px;"><span class="icon-btn" onclick="toggleEarningsBreakdown('cook-${item.id}')"><i class="fa-solid fa-list"></i>Date/Meal ke hisaab se breakdown dekho</span></div>
-          <div id="breakdown-cook-${item.id}" style="display:none; margin-top:8px;">
+          <div style="margin-top:10px; font-size:11px; font-weight:700; color:var(--text-muted); display:flex; justify-content:space-between; align-items:center;">
+            <span>Date/Meal ke hisaab se</span>
+            <span class="icon-btn" style="font-size:10px;" onclick="toggleEarningsBreakdown('cook-${item.id}')"><i class="fa-solid fa-chevron-up"></i>Chhupao</span>
+          </div>
+          <div id="breakdown-cook-${item.id}" style="margin-top:8px;">
             ${breakdown.map(b => `
               <div style="display:flex; justify-content:space-between; align-items:center; padding:7px 10px; border-bottom:1px solid var(--tan); font-size:11px;">
                 <div><b>${b.date}</b> &nbsp;•&nbsp; ${b.meal} &nbsp;•&nbsp; <span style="color:var(--text-soft);">${b.item}</span></div>
@@ -2072,8 +2075,11 @@
           <div class="icon-btn danger" onclick="deleteEntry('${item.id}')"><i class="fa-solid fa-trash"></i>Delete</div>
         </div>
         ${breakdown.length ? `
-          <div style="margin-top:8px;"><span class="icon-btn" onclick="toggleEarningsBreakdown('partner-${item.id}')"><i class="fa-solid fa-list"></i>Date/Meal ke hisaab se breakdown dekho</span></div>
-          <div id="breakdown-partner-${item.id}" style="display:none; margin-top:8px;">
+          <div style="margin-top:10px; font-size:11px; font-weight:700; color:var(--text-muted); display:flex; justify-content:space-between; align-items:center;">
+            <span>Date/Meal ke hisaab se</span>
+            <span class="icon-btn" style="font-size:10px;" onclick="toggleEarningsBreakdown('partner-${item.id}')"><i class="fa-solid fa-chevron-up"></i>Chhupao</span>
+          </div>
+          <div id="breakdown-partner-${item.id}" style="margin-top:8px;">
             ${breakdown.map(b => `
               <div style="display:flex; justify-content:space-between; align-items:center; padding:7px 10px; border-bottom:1px solid var(--tan); font-size:11px;">
                 <div><b>${b.date}</b> &nbsp;•&nbsp; ${b.meal} &nbsp;•&nbsp; <span style="color:var(--text-soft);">${b.item}</span></div>
