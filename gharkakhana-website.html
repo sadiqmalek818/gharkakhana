@@ -2190,9 +2190,13 @@
                   ? `<span onclick="event.stopPropagation()" style="display:inline-flex; align-items:center; gap:6px;">Quantity: <input type="number" min="${item.unit === 'kg' ? '0.25' : '1'}" step="${item.unit === 'kg' ? '0.25' : '1'}" value="${manualVal}" style="width:56px; padding:4px 6px; border-radius:6px; border:1px solid var(--tan); font-size:11px;" onchange="setManualComboQty('${key.replace(/'/g, "\\'")}', this.value)"> ${unitLabel(item.unit)}</span>`
                   : "Select karke quantity daalo";
               } else {
-                const baseQty = orderQtyForUnit(item.unit, item.perPersonQty * guests);
+                const effQty = effectivePerPersonQty(item);
+                const baseQty = orderQtyForUnit(item.unit, effQty * guests);
+                const splitNote = isSelected && selectedCountInCategory(item.category) > 1
+                  ? ` (${selectedCountInCategory(item.category)} ${catObj.label} items mein baant ke)`
+                  : "";
                 qtyText = isSelected && guests > 0
-                  ? `${guests} logo ke liye ~${baseQty % 1 === 0 ? baseQty : baseQty.toFixed(1)} ${unitLabel(item.unit)}`
+                  ? `${guests} logo ke liye ~${baseQty % 1 === 0 ? baseQty : baseQty.toFixed(1)} ${unitLabel(item.unit)}${splitNote}`
                   : "Select karke total mein dekho";
               }
               return `
@@ -2224,6 +2228,31 @@
       const cookObj = cookMenus.find(c => c.cook === cookName);
       const item = cookObj ? cookObj.items.find(i => i.name === itemName) : null;
       return { cookObj, item };
+    }
+
+    // How many currently-selected items share this category — real catering
+    // logic: guests' per-person allowance for a "type" of food (e.g. gravy)
+    // stays fixed no matter how many varieties of it are picked. Selecting
+    // Nahari AND Khaliya for 10 people should split that gravy allowance
+    // between the two, not give each dish its own full 10-person quantity
+    // (which would quietly cook enough for 20 people's worth of gravy).
+    function selectedCountInCategory(catKey){
+      let count = 0;
+      selectedComboKeys.forEach(key => {
+        const { item } = itemFromKey(key);
+        if(item && item.category === catKey) count++;
+      });
+      return count;
+    }
+
+    // Effective per-person share for THIS item once split across every
+    // other currently-selected item in the same category. Manual-quantity
+    // items (perPersonQty === null) are never split — the customer already
+    // types an exact number for those.
+    function effectivePerPersonQty(item){
+      if(item.perPersonQty === null) return null;
+      const sameCategoryCount = Math.max(1, selectedCountInCategory(item.category));
+      return item.perPersonQty / sameCategoryCount;
     }
 
     function toggleComboItem(key){
@@ -2281,10 +2310,13 @@
           total += item.price * manualQty;
           return;
         }
-        const baseQty = orderQtyForUnit(item.unit, item.perPersonQty * guests);
+        const effQty = effectivePerPersonQty(item);
+        const baseQty = orderQtyForUnit(item.unit, effQty * guests);
         total += item.price * baseQty;
         const qtyText = document.getElementById(`qtytext-${comboDomId(key)}`);
-        if(qtyText) qtyText.textContent = `${guests} logo ke liye ~${baseQty % 1 === 0 ? baseQty : baseQty.toFixed(1)} ${unitLabel(item.unit)}`;
+        const sameCatCount = selectedCountInCategory(item.category);
+        const splitNote = sameCatCount > 1 ? ` (${sameCatCount} items mein baant ke)` : "";
+        if(qtyText) qtyText.textContent = `${guests} logo ke liye ~${baseQty % 1 === 0 ? baseQty : baseQty.toFixed(1)} ${unitLabel(item.unit)}${splitNote}`;
       });
       // reset text for unselected items
       cookMenus.forEach(cookObj => cookObj.items.forEach(item => {
@@ -2313,7 +2345,7 @@
           const { cookObj, item } = itemFromKey(key);
           if(!cookObj || !item) return; // dish was removed since selection — skip safely
           const isManual = item.perPersonQty === null;
-          const baseQty = isManual ? (manualComboQty[key] ?? 1) : orderQtyForUnit(item.unit, item.perPersonQty * guests);
+          const baseQty = isManual ? (manualComboQty[key] ?? 1) : orderQtyForUnit(item.unit, effectivePerPersonQty(item) * guests);
           const lineTotal = Math.round(item.price * baseQty);
           total += lineTotal;
           addedCount++;
