@@ -2192,8 +2192,9 @@
               } else {
                 const effQty = effectivePerPersonQty(item);
                 const baseQty = orderQtyForUnit(item.unit, effQty * guests);
-                const splitNote = isSelected && selectedCountInCategory(item.category) > 1
-                  ? ` (${selectedCountInCategory(item.category)} ${catObj.label} items mein baant ke)`
+                const sameCatCount = selectedCountInCategory(item.category, item.unit);
+                const splitNote = isSelected && sameCatCount > 1
+                  ? ` (${sameCatCount} items mein baant ke)`
                   : "";
                 qtyText = isSelected && guests > 0
                   ? `${guests} logo ke liye ~${baseQty % 1 === 0 ? baseQty : baseQty.toFixed(1)} ${unitLabel(item.unit)}${splitNote}`
@@ -2230,28 +2231,28 @@
       return { cookObj, item };
     }
 
-    // How many currently-selected items share this category — real catering
-    // logic: guests' per-person allowance for a "type" of food (e.g. gravy)
-    // stays fixed no matter how many varieties of it are picked. Selecting
-    // Nahari AND Khaliya for 10 people should split that gravy allowance
-    // between the two, not give each dish its own full 10-person quantity
-    // (which would quietly cook enough for 20 people's worth of gravy).
-    function selectedCountInCategory(catKey){
+    // How many currently-selected items share this category AND unit — using
+    // category alone isn't precise enough: admin often puts Roti (piece-based
+    // bread) in the same category as Nahari/Khaliya (kg-based gravy) just for
+    // menu organization, but they aren't interchangeable servings. Splitting
+    // should only happen between dishes measured the same way (e.g. multiple
+    // kg-based gravies), never between a piece-count bread and a kg gravy.
+    function selectedCountInCategory(catKey, unit){
       let count = 0;
       selectedComboKeys.forEach(key => {
         const { item } = itemFromKey(key);
-        if(item && item.category === catKey) count++;
+        if(item && item.category === catKey && item.unit === unit) count++;
       });
       return count;
     }
 
     // Effective per-person share for THIS item once split across every
-    // other currently-selected item in the same category. Manual-quantity
+    // other currently-selected item in the same category AND unit. Manual-quantity
     // items (perPersonQty === null) are never split — the customer already
     // types an exact number for those.
     function effectivePerPersonQty(item){
       if(item.perPersonQty === null) return null;
-      const sameCategoryCount = Math.max(1, selectedCountInCategory(item.category));
+      const sameCategoryCount = Math.max(1, selectedCountInCategory(item.category, item.unit));
       return item.perPersonQty / sameCategoryCount;
     }
 
@@ -2314,7 +2315,7 @@
         const baseQty = orderQtyForUnit(item.unit, effQty * guests);
         total += item.price * baseQty;
         const qtyText = document.getElementById(`qtytext-${comboDomId(key)}`);
-        const sameCatCount = selectedCountInCategory(item.category);
+        const sameCatCount = selectedCountInCategory(item.category, item.unit);
         const splitNote = sameCatCount > 1 ? ` (${sameCatCount} items mein baant ke)` : "";
         if(qtyText) qtyText.textContent = `${guests} logo ke liye ~${baseQty % 1 === 0 ? baseQty : baseQty.toFixed(1)} ${unitLabel(item.unit)}${splitNote}`;
       });
