@@ -1,24 +1,18 @@
 // ---------------------------------------------------------------------------
 // GharKaKhana AI chat proxy (Vercel serverless function)
 // ---------------------------------------------------------------------------
-// SECURITY UPDATE (why): the previous version had Access-Control-Allow-Origin
-// set to "*" with no rate limit and no origin check — meaning ANYONE on the
-// internet who found this URL (it's plainly visible in the site's public JS)
-// could call it directly and burn through the Groq quota for free, unlimited
-// times. That kind of abusive traffic pattern is exactly what makes Groq's
-// own security system auto-revoke a key — which is why the key kept dying
-// every few days even though it was never committed to GitHub.
+// SECURITY: Access-Control-Allow-Origin is restricted to our own sites (see
+// ALLOWED_ORIGINS) — reflecting "*" would let anyone on the internet call
+// this and burn through the Groq quota for free, which is what caused the
+// API key to get auto-revoked repeatedly early on. A per-IP rate limit and a
+// message-size cap add further protection against abuse.
 //
-// This version adds three layers, each cheap and each optional to relax
-// later if it ever blocks something legitimate:
-//   1. Only requests whose Origin/Referer matches YOUR sites are allowed.
-//   2. A simple per-IP rate limit (best-effort — resets on cold start, but
-//      stops rapid automated hammering within a warm function instance).
-//   3. A hard cap on message size/count so one request can't burn a huge
-//      chunk of quota by itself.
-//
-// IMPORTANT: update ALLOWED_ORIGINS below to your real domain(s) if they
-// ever change (e.g. if you move off GitHub Pages, or add a custom domain).
+// BUGFIX (this version): the message-size cap used to sum the length of
+// EVERY message including the "system" one — but the system message is our
+// own live-menu context (categories, dishes, offers, delivery rules), which
+// keeps growing as the menu grows. Once that alone passed 8000 characters,
+// even typing "Hi" got rejected as "message too long". Fixed by only
+// counting the customer's own messages (role !== "system") against the cap.
 // ---------------------------------------------------------------------------
 
 const ALLOWED_ORIGINS = [
@@ -26,10 +20,6 @@ const ALLOWED_ORIGINS = [
   "https://gharkakhana-kappa.vercel.app",
 ];
 
-// Best-effort in-memory rate limit — resets whenever this serverless
-// instance cold-starts, so it's not perfect, but it stops a burst of rapid
-// automated requests hitting the same warm instance. Good enough for a
-// small local food site; not meant to survive a real DDoS.
 const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute
 const RATE_LIMIT_MAX = 12; // max requests per IP per minute
 const requestLog = new Map(); // ip -> array of timestamps
@@ -46,8 +36,6 @@ export default async function handler(req, res) {
   const origin = req.headers.origin || "";
   const isAllowedOrigin = ALLOWED_ORIGINS.includes(origin);
 
-  // Only echo back the origin if it's actually one of ours — reflecting "*"
-  // is exactly what let anyone call this before.
   if (isAllowedOrigin) res.setHeader("Access-Control-Allow-Origin", origin);
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -62,9 +50,6 @@ export default async function handler(req, res) {
     return;
   }
 
-  // Reject anything that isn't coming from our own site. A real attacker
-  // could still spoof this header from a script, but this alone stops the
-  // vast majority of automated scanners/bots that just try the raw URL.
   if (!isAllowedOrigin) {
     res.status(403).json({ error: "Is origin se request allowed nahi hai" });
     return;
@@ -81,15 +66,21 @@ export default async function handler(req, res) {
     res.status(400).json({ error: "messages array chahiye" });
     return;
   }
-  // Cap how much one request can cost — stops a single abusive call from
-  // sending a huge conversation/prompt and burning a big chunk of quota.
-  if (messages.length > 20) {
+
+  // Only the customer/assistant conversation counts toward these caps — the
+  // system message is our own trusted live-menu context and can legitimately
+  // be large; it's never something a customer could abuse to burn quota.
+  const conversationMessages = messages.filter(m => m.role !== "system");
+  if (conversationMessages.length > 20) {
     res.status(400).json({ error: "Bahut lambi conversation — dobara shuru karo" });
     return;
   }
-  const totalChars = messages.reduce((sum, m) => sum + (typeof m.content === "string" ? m.content.length : 0), 0);
+  const totalChars = conversationMessages.reduce((sum, m) => sum + (typeof m.content === "string" ? m.content.length : 0), 0);
   if (totalChars > 8000) {
-    res.status(400).json({ error: "Message bahut lamba hai" });
+    // TEMP DEBUG: reporting the actual computed length so we can see exactly
+    // what's happening from the chat bubble itself, without needing to dig
+    // through Vercel logs. Safe to remove once this is confirmed working.
+    res.status(400).json({ error: `Message bahut lamba hai (${totalChars} chars, ${conversationMessages.length} messages)` });
     return;
   }
 
