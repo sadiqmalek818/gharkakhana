@@ -77,7 +77,10 @@ export default async function handler(req, res) {
   }
   const totalChars = conversationMessages.reduce((sum, m) => sum + (typeof m.content === "string" ? m.content.length : 0), 0);
   if (totalChars > 8000) {
-    res.status(400).json({ error: "Message bahut lamba hai" });
+    // TEMP DEBUG: reporting the actual computed length so we can see exactly
+    // what's happening from the chat bubble itself, without needing to dig
+    // through Vercel logs. Safe to remove once this is confirmed working.
+    res.status(400).json({ error: `Message bahut lamba hai (${totalChars} chars, ${conversationMessages.length} messages)` });
     return;
   }
 
