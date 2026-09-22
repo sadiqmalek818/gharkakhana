@@ -18,6 +18,8 @@
 const ALLOWED_ORIGINS = [
   "https://sadiqmalek818.github.io",
   "https://gharkakhana-kappa.vercel.app",
+  "https://gharkakhanaonline.in",
+  "https://www.gharkakhanaonline.in",
 ];
 
 const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute
