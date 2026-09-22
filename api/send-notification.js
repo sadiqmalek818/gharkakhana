@@ -24,6 +24,8 @@ const admin = require("firebase-admin");
 const ALLOWED_ORIGINS = [
   "https://sadiqmalek818.github.io",
   "https://gharkakhana-kappa.vercel.app",
+  "https://gharkakhanaonline.in",
+  "https://www.gharkakhanaonline.in",
 ];
 
 // Initialization is wrapped in its own function (instead of running loose at
