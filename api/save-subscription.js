@@ -11,6 +11,8 @@ const admin = require("firebase-admin");
 const ALLOWED_ORIGINS = [
   "https://sadiqmalek818.github.io",
   "https://gharkakhana-kappa.vercel.app",
+  "https://gharkakhanaonline.in",
+  "https://www.gharkakhanaonline.in",
 ];
 
 // Same defensive init pattern as send-notification.js — see that file's
