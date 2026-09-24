@@ -1434,17 +1434,72 @@
             ${o.discount > 0 ? `<div class="order-meta" style="color:var(--sage);"><i class="fa-solid fa-tag"></i> ${o.offerApplied || "Offer"} — -₹${o.discount} (₹${o.subtotal} → ₹${o.total})</div>` : ""}
             ${o.deliveryCharge > 0 ? `<div class="order-meta"><i class="fa-solid fa-motorcycle"></i> Delivery charge (${o.personCount || 1} log) — ₹${o.deliveryCharge}, bill total mein shaamil</div>` : ""}
             ${o.cancelledBy === "customer" ? `<div class="order-meta" style="color:var(--chili);"><i class="fa-solid fa-ban"></i> Customer ne khud cancel kiya</div>` : ""}
+            ${o.paymentVerified ? `<div class="order-meta" style="color:var(--sage); font-weight:700;"><i class="fa-solid fa-circle-check"></i> Payment Verified ✓</div>` : `<div class="order-meta" style="color:var(--chili);"><i class="fa-solid fa-clock"></i> Payment abhi verify nahi hua</div>`}
           </div>
           <span class="badge ${o.status === "Pending" ? "inactive" : o.status === "Declined" ? "inactive" : "active"}">${o.status}</span>
         </div>
-        ${o.status === "Pending" ? `
-          <div class="row-actions">
+        <div class="row-actions">
+          ${!o.paymentVerified ? `<div class="icon-btn" style="color:var(--sage); border-color:#DCE7D4;" onclick="markPaymentVerified('${o.id}')"><i class="fa-solid fa-indian-rupee-sign"></i>Payment Confirm Karo</div>` : ""}
+          ${o.status === "Pending" ? `
             <div class="icon-btn" style="color:var(--sage); border-color:#DCE7D4;" onclick="setOrderStatus('${o.id}','Confirmed')"><i class="fa-solid fa-check"></i>Approve</div>
             <div class="icon-btn danger" onclick="setOrderStatus('${o.id}','Declined')"><i class="fa-solid fa-xmark"></i>Decline</div>
-          </div>
-        ` : ""}
+          ` : ""}
+        </div>
       </div>
     `).join("");
+  }
+
+  // Asked once, remembered on THIS device only (localStorage) — never baked
+  // into the page's own source code, since admin.html's JS is publicly
+  // viewable and a hardcoded secret there would defeat the whole point of
+  // having one.
+  function getNotifySecret(){
+    let secret = localStorage.getItem("gkk_notify_secret");
+    if(!secret){
+      secret = prompt("Push notification secret daalo (Vercel NOTIFY_SECRET) — sirf ek baar poochega, is device par yaad rakh lega:");
+      if(secret) localStorage.setItem("gkk_notify_secret", secret);
+    }
+    return secret;
+  }
+
+  // Separate from order approval — admin checks their own UPI app and
+  // confirms the money actually arrived, independent of when they get
+  // around to approving/assigning the order itself. Customer gets a
+  // dedicated push notification the moment this flips, so they have peace
+  // of mind their payment worked even before the order is formally approved.
+  function markPaymentVerified(id){
+    if(!confirm("Confirm karo ki payment UPI app mein aa gayi hai?")) return;
+    if(!window.FIREBASE_CONFIGURED){
+      const o = data.orders.find(x => x.id === id);
+      if(o) o.paymentVerified = true;
+      showToast(`Payment verified (local demo, save nahi hoga)`);
+      renderCalendar(); renderOrdersList();
+      return;
+    }
+    const order = data.orders.find(x => x.id === id);
+    db.collection("orders").doc(id).update({ paymentVerified: true, paymentVerifiedAt: firebase.firestore.FieldValue.serverTimestamp() })
+      .then(() => {
+        showToast("Payment verify ho gaya ✓ — customer ko notify kar diya");
+        // Best-effort push — if this fails (no secret set, network hiccup,
+        // customer never subscribed to push), the Firestore update above
+        // has already succeeded and the in-app watcher will still show the
+        // confirmation whenever the customer next opens the site, so we
+        // don't block or alarm the admin over this specific part failing.
+        const secret = getNotifySecret();
+        if(!secret || !order) return;
+        fetch("https://gharkakhana-kappa.vercel.app/api/send-notification", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            secret,
+            targetPhone: order.customerPhone,
+            title: "Payment Verified ✓",
+            body: `Aapka ₹${order.total} ka payment humein mil gaya hai — order process ho raha hai!`,
+            url: "/gharkakhana/gharkakhana-website.html",
+          }),
+        }).catch(() => {});
+      })
+      .catch(err => showToast("Error: " + err.message));
   }
 
   function setOrderStatus(id, status){

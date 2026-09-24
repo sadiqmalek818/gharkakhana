@@ -2512,6 +2512,7 @@
             </div>
             <div style="font-size:10.5px; color:var(--text-soft); margin-top:3px;"><i class="fa-solid fa-calendar-day"></i> ${o.date} &nbsp;•&nbsp; ${o.meal || ""} &nbsp;•&nbsp; ${o.cook} &nbsp;•&nbsp; ₹${o.total}</div>
             ${o.isAdvance ? `<div style="display:inline-flex; align-items:center; gap:4px; background:#FFF4E0; color:var(--turmeric); border-radius:6px; padding:2px 7px; font-size:9.5px; font-weight:700; margin-top:5px;"><i class="fa-solid fa-calendar-clock"></i> ADVANCE ORDER</div>` : ""}
+            ${o.paymentVerified ? `<div style="display:inline-flex; align-items:center; gap:4px; background:#EAF4E4; color:var(--sage); border-radius:6px; padding:2px 7px; font-size:9.5px; font-weight:700; margin-top:5px;"><i class="fa-solid fa-circle-check"></i> PAYMENT VERIFIED</div>` : ""}
             <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;">
               <button class="btn btn-ghost btn-sm" onclick="toggleOrderBill(${idx})"><i class="fa-solid fa-receipt"></i> Bill dekho</button>
               ${o.items ? `<button class="btn btn-ghost btn-sm" onclick="reorderPastOrder(${idx})"><i class="fa-solid fa-rotate-right"></i> Reorder karo</button>` : ""}
@@ -2611,6 +2612,24 @@
         snapshot.docChanges().forEach(change => {
           if(change.type !== "modified" && change.type !== "added") return;
           const order = change.doc.data();
+
+          // Payment-verified is tracked separately from order status — admin
+          // can confirm the money arrived independent of approving the order
+          // itself, so this needs its own seen-key rather than piggybacking
+          // on the status one below.
+          const paySeenKey = `gkk_seen_payment_${change.doc.id}`;
+          const paySeen = localStorage.getItem(paySeenKey);
+          if(order.paymentVerified && paySeen !== "1"){
+            localStorage.setItem(paySeenKey, "1");
+            const payMsg = `✅ Aapka ₹${order.total} ka payment verify ho gaya — order process ho raha hai!`;
+            playAlertSound();
+            document.getElementById("profileBadge").style.display = "block";
+            showToast(payMsg);
+            if(window.Notification && Notification.permission === "granted"){
+              try{ new Notification("GharKaKhana", { body: payMsg }); } catch(e){}
+            }
+          }
+
           const seenKey = `gkk_seen_status_${change.doc.id}`;
           const lastSeen = localStorage.getItem(seenKey);
           if(lastSeen === order.status) return; // already notified for this status
