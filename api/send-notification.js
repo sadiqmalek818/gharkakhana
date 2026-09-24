@@ -57,7 +57,7 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") { res.status(204).end(); return; }
   if (req.method !== "POST") { res.status(405).json({ error: "POST use karo" }); return; }
 
-  const { secret, title, body, url } = req.body || {};
+  const { secret, title, body, url, targetPhone } = req.body || {};
   if (!secret || secret !== process.env.NOTIFY_SECRET) {
     res.status(403).json({ error: "Galat secret" });
     return;
@@ -79,7 +79,14 @@ export default async function handler(req, res) {
     );
 
     const db = admin.firestore();
-    const snapshot = await db.collection("pushSubscriptions").get();
+    // targetPhone (optional): send to just ONE customer's subscriptions —
+    // used for individual events like "your payment was verified", so we
+    // don't broadcast a personal message to every subscriber. Omit it (as
+    // the admin's manual "Push Notification Bhejo" form does) to broadcast
+    // to everyone like before.
+    const snapshot = targetPhone
+      ? await db.collection("pushSubscriptions").where("customerPhone", "==", targetPhone).get()
+      : await db.collection("pushSubscriptions").get();
     const payload = JSON.stringify({ title, body, url: url || "/" });
 
     let sent = 0, failed = 0, removed = 0;
