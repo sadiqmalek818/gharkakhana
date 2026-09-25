@@ -1485,9 +1485,14 @@
       // If the cart has an Apna Thaal combo in it, default the delivery
       // person-count to whatever guest number the customer already used
       // there — that's almost always the real headcount for the order.
+      // Otherwise, reset to 1 — without this, a stale guest count left over
+      // from an earlier Apna Thaal checkout (even one the customer backed
+      // out of) would keep applying to unrelated individual-item orders.
       if(cart.some(i => i.name.includes("(Apna Thaal"))){
         const guestsVal = parseInt(document.getElementById("comboGuests")?.value);
         if(guestsVal > 0) orderPersonCount = guestsVal;
+      } else {
+        orderPersonCount = 1;
       }
       const modal = document.getElementById("cartModal");
       modal.innerHTML = `
