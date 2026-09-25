@@ -1482,17 +1482,25 @@
     }
 
     function renderFulfilStep(){
-      // If the cart has an Apna Thaal combo in it, default the delivery
-      // person-count to whatever guest number the customer already used
-      // there — that's almost always the real headcount for the order.
-      // Otherwise, reset to 1 — without this, a stale guest count left over
-      // from an earlier Apna Thaal checkout (even one the customer backed
-      // out of) would keep applying to unrelated individual-item orders.
+      // Default the delivery person-count from whatever guest number the
+      // customer already used to build this cart — Apna Thaal's dedicated
+      // guest field takes priority if present; otherwise, pull it from any
+      // individual dish ordered in "Logo ki ginti se" mode (its cart line
+      // looks like "10 log (~40 pcs) × ₹4.5/piece"). Falls back to 1 only if
+      // nothing in the cart has a guest count at all.
       if(cart.some(i => i.name.includes("(Apna Thaal"))){
         const guestsVal = parseInt(document.getElementById("comboGuests")?.value);
         if(guestsVal > 0) orderPersonCount = guestsVal;
       } else {
-        orderPersonCount = 1;
+        let bestGuess = 0;
+        cart.forEach(i => {
+          const match = (i.meta || "").match(/^(\d+)\s*log/);
+          if(match){
+            const n = parseInt(match[1]);
+            if(n > bestGuess) bestGuess = n;
+          }
+        });
+        orderPersonCount = bestGuess > 0 ? bestGuess : 1;
       }
       const modal = document.getElementById("cartModal");
       modal.innerHTML = `
