@@ -749,10 +749,11 @@
 
   <section>
     <div class="wrap">
-      <div class="cook-banner">
-        <div>
-          <i class="fa-solid fa-kitchen-set"></i>
-        </div>
+      <div class="cook-banner" style="flex-direction:column; align-items:flex-start;">
+        <i class="fa-solid fa-handshake"></i>
+        <h3>Farmhouse, Tour Operator ya Club ho?</h3>
+        <p>Apne customers/guests ke liye GharKaKhana se ghar-jaisa khana order karwao — partner ban ke referral commission bhi kamao.</p>
+        <button class="btn btn-primary" style="flex:none; padding:11px 20px;" onclick="sendWhatsAppInquiry('Hi GharKaKhana! Main Farmhouse/Tour Operator/Club ki taraf se partner banna chahta hoon.')"><i class="fa-solid fa-handshake"></i>Partner banke judo</button>
       </div>
     </div>
   </section>
@@ -763,7 +764,7 @@
         <i class="fa-solid fa-kitchen-set"></i>
         <h3>Aap bhi ghar se cook karte ho?</h3>
         <p>GharKaKhana ke saath judo aur apna khana Ahmedabad ke customers tak pahunchao.</p>
-        <button class="btn btn-primary" style="flex:none; padding:11px 20px;"><i class="fa-solid fa-chef-hat"></i>Cook banke judo</button>
+        <button class="btn btn-primary" style="flex:none; padding:11px 20px;" onclick="sendWhatsAppInquiry('Hi GharKaKhana! Main ghar se cook karta/karti hoon aur aapke saath judna chahta/chahti hoon.')"><i class="fa-solid fa-chef-hat"></i>Cook banke judo</button>
       </div>
     </div>
   </section>
@@ -3056,12 +3057,18 @@ ORDER TIMINGS: ${occasionLine || "N/A"}`;
     }
 
     function openWhatsApp(){
+      sendWhatsAppInquiry("Hi GharKaKhana! Mujhe order ke baare mein poochna tha.");
+    }
+
+    // Reusable for any "inquiry" button on the homepage (cook signup, partner
+    // signup, etc.) — same WhatsApp number, different opening message so
+    // admin immediately knows what the person is asking about.
+    function sendWhatsAppInquiry(message){
       if(!siteContent.whatsapp){
         showToast("WhatsApp number abhi set nahi hua hai");
         return;
       }
-      const msg = encodeURIComponent("Hi GharKaKhana! Mujhe order ke baare mein poochna tha.");
-      window.open(`https://wa.me/${siteContent.whatsapp}?text=${msg}`, "_blank");
+      window.open(`https://wa.me/${siteContent.whatsapp}?text=${encodeURIComponent(message)}`, "_blank");
     }
 
     function shareApp(){
