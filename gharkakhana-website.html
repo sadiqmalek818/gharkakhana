@@ -1319,6 +1319,12 @@
     // count the customer last used in Apna Thaal, since that's usually the
     // real headcount for a bulk/party order; falls back to 1 for a normal order.
     let orderPersonCount = 1;
+    // Tracks whether the customer has manually typed their own "kitne log"
+    // value THIS checkout — once true, the smart auto-default below must
+    // never overwrite it (that was the bug: re-rendering the fulfil step,
+    // e.g. after going back and forth, kept resetting a manually-typed
+    // number back to the auto-guess or 1).
+    let personCountManuallySet = false;
     let mealType = null; // "lunch" | "dinner" | "urgent"
     function todayISO(){
       const d = new Date();
@@ -1489,9 +1495,11 @@
       // looks like "10 log (~40 pcs) × ₹4.5/piece"). Falls back to 1 only if
       // nothing in the cart has a guest count at all.
       if(cart.some(i => i.name.includes("(Apna Thaal"))){
-        const guestsVal = parseInt(document.getElementById("comboGuests")?.value);
-        if(guestsVal > 0) orderPersonCount = guestsVal;
-      } else {
+        if(!personCountManuallySet){
+          const guestsVal = parseInt(document.getElementById("comboGuests")?.value);
+          if(guestsVal > 0) orderPersonCount = guestsVal;
+        }
+      } else if(!personCountManuallySet){
         let bestGuess = 0;
         cart.forEach(i => {
           const match = (i.meta || "").match(/^(\d+)\s*log/);
@@ -1592,6 +1600,7 @@
     // knows the delivery charge before reaching Payment — no surprises later.
     function updateDeliveryChargePreview(val){
       orderPersonCount = Math.max(1, parseInt(val) || 1);
+      personCountManuallySet = true;
       const el = document.getElementById("deliveryChargePreview");
       if(el) el.innerHTML = `<i class="fa-solid fa-motorcycle"></i> Delivery charge: ₹${computeDeliveryCharge(orderPersonCount)}`;
     }
@@ -2031,6 +2040,7 @@
       appliedOffer = null;
       isFirstOrderCustomer = null;
       orderPersonCount = 1;
+      personCountManuallySet = false;
       // Reset so the NEXT order requires its own deliberate scan/selection/typing —
       // a referral shouldn't silently carry over to an unrelated later order
       // in the same browsing session either.
