@@ -442,6 +442,7 @@
     // minCharge for normal-size orders, switching to perPersonRate × person
     // count once the order is for more than perPersonThreshold people.
     deliveryRule: { minCharge: 300, perPersonThreshold: 10, perPersonRate: 10 },
+    extraCharges: { platformFee: 0, packagingCharge: 0, gstPercent: 0 },
     content: { about: "", privacy: "", contact: "", whatsapp: "" },
   };
   let currentTab = "cooks";
@@ -533,6 +534,7 @@
         if(d.offers && d.offers.length) settings.offers = d.offers;
         if(d.partnerTypes && d.partnerTypes.length) settings.partnerTypes = d.partnerTypes;
         if(d.deliveryRule) settings.deliveryRule = d.deliveryRule;
+        if(d.extraCharges) settings.extraCharges = d.extraCharges;
       } else {
         // First run — seed the catalog doc with the defaults above.
         db.collection("settings").doc("catalog").set({
@@ -540,6 +542,7 @@
           occasions: settings.occasions, events: settings.events,
           localities: settings.localities, offers: settings.offers,
           partnerTypes: settings.partnerTypes, deliveryRule: settings.deliveryRule,
+          extraCharges: settings.extraCharges,
         }).catch(()=>{});
       }
       if(currentTab === "settings") renderSettings();
@@ -819,7 +822,7 @@
             <div style="border:1px solid var(--tan); border-radius:12px; padding:10px 12px; margin-bottom:8px; ${o.active ? "" : "opacity:0.5;"}">
               <div style="display:flex; justify-content:space-between; gap:8px;">
                 <div style="font-size:12.5px; font-weight:700;">${o.label}</div>
-                <span style="font-size:9.5px; font-weight:700; color:${o.kind === "discount" ? "var(--sage)" : o.kind === "freeItem" ? "var(--chili)" : "var(--turmeric)"};">${o.kind === "discount" ? (o.discountType === "percent" ? o.discountValue + "% OFF" : "₹" + o.discountValue + " OFF") : o.kind === "freeItem" ? `🎁 ${o.freeItemName} FREE` : "INFO ONLY"}</span>
+                <span style="font-size:9.5px; font-weight:700; color:${o.kind === "discount" ? "var(--sage)" : o.kind === "freeItem" ? "var(--chili)" : o.kind === "addCharge" ? "#B5651D" : "var(--turmeric)"};">${o.kind === "discount" ? (o.discountType === "percent" ? o.discountValue + "% OFF" : "₹" + o.discountValue + " OFF") : o.kind === "freeItem" ? `🎁 ${o.freeItemName} FREE` : o.kind === "addCharge" ? `+ ${o.discountType === "percent" ? o.discountValue + "%" : "₹" + o.discountValue}` : "INFO ONLY"}</span>
               </div>
               <div style="font-size:10.5px; color:var(--text-soft); margin-top:2px;">${o.sub || ""}</div>
               <div style="font-size:9.5px; color:var(--text-soft); margin-top:4px;">
@@ -857,6 +860,27 @@
         <div class="modal-actions" style="margin-top:0;">
           <button class="btn btn-ghost" style="flex:1;" onclick="resetDeliveryRule()">Default pe reset</button>
           <button class="btn btn-primary" style="flex:1;" onclick="saveDeliveryRule()"><i class="fa-solid fa-floppy-disk"></i>Save Karo</button>
+        </div>
+      </div>
+
+      <div class="settings-card">
+        <h3><i class="fa-solid fa-receipt"></i> Extra Charges (Platform Fee, Packaging, GST)</h3>
+        <p>Yeh sab har order ke bill mein alag line-item ki tarah add honge (jaise Zomato/Swiggy mein hota hai). Khaali ya 0 rakho to woh line bill mein bilkul nahi dikhegi.</p>
+        <div class="field">
+          <label>Platform Fee (₹, flat — har order pe same)</label>
+          <input type="number" id="ec_platform" min="0" step="0.5" value="${settings.extraCharges?.platformFee || ""}" placeholder="e.g. 15">
+        </div>
+        <div class="field">
+          <label>Packaging Charge (₹, flat — har order pe same)</label>
+          <input type="number" id="ec_packaging" min="0" step="0.5" value="${settings.extraCharges?.packagingCharge || ""}" placeholder="e.g. 20">
+        </div>
+        <div class="field">
+          <label>GST (%) — food value + upar ke charges par lagega</label>
+          <input type="number" id="ec_gst" min="0" max="100" step="0.1" value="${settings.extraCharges?.gstPercent || ""}" placeholder="e.g. 5">
+        </div>
+        <div class="modal-actions" style="margin-top:0;">
+          <button class="btn btn-ghost" style="flex:1;" onclick="resetExtraCharges()">Default pe reset</button>
+          <button class="btn btn-primary" style="flex:1;" onclick="saveExtraCharges()"><i class="fa-solid fa-floppy-disk"></i>Save Karo</button>
         </div>
       </div>
 
@@ -963,10 +987,25 @@
       occasions: settings.occasions, events: settings.events,
       localities: settings.localities, offers: settings.offers,
       partnerTypes: settings.partnerTypes, deliveryRule: settings.deliveryRule,
+      extraCharges: settings.extraCharges,
     })
       .then(() => showToast("Update ho gaya ✓"))
       .catch(err => showToast("Error: " + err.message));
     renderSettings();
+  }
+
+  function saveExtraCharges(){
+    settings.extraCharges = {
+      platformFee: Math.max(0, parseFloat(document.getElementById("ec_platform").value) || 0),
+      packagingCharge: Math.max(0, parseFloat(document.getElementById("ec_packaging").value) || 0),
+      gstPercent: Math.max(0, parseFloat(document.getElementById("ec_gst").value) || 0),
+    };
+    saveCatalog();
+  }
+
+  function resetExtraCharges(){
+    settings.extraCharges = { platformFee: 0, packagingCharge: 0, gstPercent: 0 };
+    saveCatalog();
   }
 
   function sendPushNotification(){
@@ -1117,8 +1156,9 @@
         <div class="field"><label>Sub-text (chhota description)</label><input type="text" id="o_sub" value="${offer ? (offer.sub || "") : ""}" placeholder="e.g. Naye customers ke liye"></div>
         <div class="field"><label>Type</label>
           <select id="o_kind" onchange="toggleOfferDiscountFields()">
-            <option value="discount" ${offer && offer.kind === "discount" ? "selected" : ""}>Discount (₹ ya % — checkout pe apply hoga)</option>
+            <option value="discount" ${offer && offer.kind === "discount" ? "selected" : ""}>Discount (₹ ya % — bill se minus hoga)</option>
             <option value="freeItem" ${offer && offer.kind === "freeItem" ? "selected" : ""}>Free Item (jaise "Cake Free", "Cold Drink Free")</option>
+            <option value="addCharge" ${offer && offer.kind === "addCharge" ? "selected" : ""}>Add Charge (jaise Membership Fee — bill mein PLUS hoga)</option>
             <option value="info" ${offer && offer.kind === "info" ? "selected" : ""}>Sirf Info Banner (koi discount nahi)</option>
           </select>
         </div>
@@ -1129,7 +1169,7 @@
               <option value="flat" ${offer && offer.discountType === "flat" ? "selected" : ""}>Flat (₹)</option>
             </select>
           </div>
-          <div class="field"><label>Value</label><input type="number" id="o_discountValue" value="${offer ? offer.discountValue : ""}" placeholder="e.g. 20"></div>
+          <div class="field" id="o_discountValueField"><label>Value</label><input type="number" id="o_discountValue" value="${offer ? offer.discountValue : ""}" placeholder="e.g. 20"></div>
         </div>
         <div id="offerFreeItemFields">
           <div class="field"><label>Kaunsi dish free hogi</label>
@@ -1158,7 +1198,7 @@
 
   function toggleOfferDiscountFields(){
     const kind = document.getElementById("o_kind").value;
-    document.getElementById("offerDiscountFields").style.display = kind === "discount" ? "block" : "none";
+    document.getElementById("offerDiscountFields").style.display = (kind === "discount" || kind === "addCharge") ? "block" : "none";
     document.getElementById("offerFreeItemFields").style.display = kind === "freeItem" ? "block" : "none";
     document.getElementById("offerCodeFields").style.display = kind === "info" ? "none" : "block";
   }
@@ -1168,13 +1208,13 @@
     if(!label){ showToast("Banner text likho"); return; }
     const existingKey = document.getElementById("o_key").value;
     const kind = document.getElementById("o_kind").value;
-    const discountValue = kind === "discount" ? (parseFloat(document.getElementById("o_discountValue").value) || 0) : 0;
+    const discountValue = (kind === "discount" || kind === "addCharge") ? (parseFloat(document.getElementById("o_discountValue").value) || 0) : 0;
     // Catches exactly the bug that slipped through before: a "Discount" kind
     // saved with no real value ends up silently auto-applying on the
     // customer site and showing "₹0 bacha" — confusing and pointless. If
     // it's really just informational, "Sirf Info Banner" is the right kind.
-    if(kind === "discount" && discountValue <= 0){
-      showToast("Discount ki value 0 nahi ho sakti — ya to value bharo ya 'Sirf Info Banner' select karo");
+    if((kind === "discount" || kind === "addCharge") && discountValue <= 0){
+      showToast(kind === "addCharge" ? "Add Charge ki value 0 nahi ho sakti" : "Discount ki value 0 nahi ho sakti — ya to value bharo ya 'Sirf Info Banner' select karo");
       return;
     }
     const freeItemName = kind === "freeItem" ? document.getElementById("o_freeItemName").value : "";

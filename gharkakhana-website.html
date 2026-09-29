@@ -932,6 +932,11 @@
     // perPersonThreshold people, the charge switches to per-person instead.
     const DEFAULT_DELIVERY_RULE = { minCharge: 300, perPersonThreshold: 10, perPersonRate: 10 };
     let siteDeliveryRule = DEFAULT_DELIVERY_RULE;
+    // Fixed per-order extras (Settings > Extra Charges) — each one is 0/absent
+    // by default, so none of these lines show up on a bill until admin
+    // deliberately sets a value.
+    const DEFAULT_EXTRA_CHARGES = { platformFee: 0, packagingCharge: 0, gstPercent: 0 };
+    let siteExtraCharges = DEFAULT_EXTRA_CHARGES;
     function computeDeliveryCharge(personCount){
       const rule = siteDeliveryRule || DEFAULT_DELIVERY_RULE;
       const count = Math.max(1, parseInt(personCount) || 1);
@@ -1238,6 +1243,7 @@
         if(!offerSpotlightChecked){ offerSpotlightChecked = true; maybeShowDailyOfferSpotlight(); }
         siteUnits = (d.units && d.units.length) ? d.units : DEFAULT_UNITS;
         siteDeliveryRule = d.deliveryRule || DEFAULT_DELIVERY_RULE;
+        siteExtraCharges = d.extraCharges || DEFAULT_EXTRA_CHARGES;
         // Delivery charge (shown at Payment step) depends on this rule, so if
         // the customer is already sitting on that step when admin edits it,
         // refresh the figure live instead of leaving a stale amount on screen.
@@ -1699,7 +1705,38 @@
     }
 
     let isFirstOrderCustomer = null; // null = not checked yet, true/false once known
-    let appliedOffer = null; // the discount offer currently applied, if any
+    let appliedOffer = null; // the discount offer currently applied, if any (subtracts from the bill)
+    // Separate slot for an "addCharge" offer (e.g. a paid Membership fee) —
+    // the opposite direction from appliedOffer (adds to the bill instead of
+    // subtracting), and independent of it so a customer can have a discount
+    // code AND a membership on the same order, like the big delivery apps.
+    let appliedCharge = null;
+
+    // Amount an "addCharge" offer contributes to the bill — positive number.
+    function computeAddChargeAmount(offer, subtotal){
+      if(offer.discountType === "percent") return Math.round(subtotal * offer.discountValue / 100);
+      return Math.round(offer.discountValue);
+    }
+
+    function removeAppliedCharge(){
+      appliedCharge = null;
+      renderPaymentStep();
+    }
+
+    // The fixed per-order extras from Admin > Settings > Extra Charges.
+    // Every value here is 0 unless admin deliberately sets one, and a 0
+    // never shows up as a line on the bill — so this stays invisible to
+    // customers until admin turns it on. GST is taken on the food value
+    // (after any discount) plus the platform/packaging fees, matching how the
+    // bigger apps tax their service fees too.
+    function computeExtraCharges(subtotal, discount){
+      const ec = siteExtraCharges || DEFAULT_EXTRA_CHARGES;
+      const platformFee = Math.max(0, Math.round(ec.platformFee || 0));
+      const packagingCharge = Math.max(0, Math.round(ec.packagingCharge || 0));
+      const gstBase = Math.max(0, subtotal - discount) + platformFee + packagingCharge;
+      const gstAmount = ec.gstPercent > 0 ? Math.round(gstBase * ec.gstPercent / 100) : 0;
+      return { platformFee, packagingCharge, gstAmount, gstPercent: ec.gstPercent || 0 };
+    }
 
     async function goToPayment(){
       if(!mealType){
@@ -1764,13 +1801,23 @@
       const code = (codeArg || document.getElementById("couponInput")?.value || "").trim().toUpperCase();
       if(!code){ showToast("Coupon code likho"); return; }
       const subtotal = cartTotal();
-      const offer = siteOffers.find(o => o.code && o.code.toUpperCase() === code && (o.kind === "discount" || o.kind === "freeItem") && o.active);
+      const offer = siteOffers.find(o => o.code && o.code.toUpperCase() === code && (o.kind === "discount" || o.kind === "freeItem" || o.kind === "addCharge") && o.active);
       if(!offer){
         showToast("Ye code valid nahi hai ya expire ho gaya hai");
         return;
       }
       if(offer.firstOrderOnly && isFirstOrderCustomer !== true){
         showToast("Yeh code sirf pehle order par use ho sakta hai");
+        return;
+      }
+
+      // "addCharge" offers (e.g. Membership fee) go in their own slot and
+      // ADD to the bill — independent of any discount also applied.
+      if(offer.kind === "addCharge"){
+        const chargeAmount = computeAddChargeAmount(offer, subtotal);
+        appliedCharge = { key: offer.key, label: offer.label, amount: chargeAmount, code, kind: "addCharge" };
+        renderPaymentStep();
+        showToast(`${offer.label} add ho gaya — +₹${chargeAmount}`);
         return;
       }
       const amount = computeOfferDiscount(offer, subtotal, cart);
@@ -1874,12 +1921,21 @@
       const subtotal = cartTotal();
       const discount = appliedOffer ? Math.min(appliedOffer.amount, subtotal) : 0;
       const deliveryCharge = fulfilment === "delivery" ? computeDeliveryCharge(orderPersonCount) : 0;
-      const total = subtotal - discount + deliveryCharge;
+      const membershipCharge = appliedCharge ? appliedCharge.amount : 0;
+      const extras = computeExtraCharges(subtotal, discount);
+      const total = subtotal - discount + deliveryCharge + membershipCharge + extras.platformFee + extras.packagingCharge + extras.gstAmount;
       const isAdvance = orderDate !== todayISO();
       // Show every active coded offer — including ones the customer isn't
       // eligible for right now — so nothing feels hidden. Ineligible ones
       // are visually dimmed with the reason, instead of silently vanishing.
-      const allCodedOffers = siteOffers.filter(o => (o.kind === "discount" || o.kind === "freeItem") && o.active && o.code && !o.hidden && (!appliedOffer || appliedOffer.code !== o.code));
+      // Discount/free-item offers and add-charge offers use SEPARATE slots
+      // (a customer can have one of each at once), so "already applied"
+      // is checked against whichever slot that offer's own kind belongs to.
+      const allCodedOffers = siteOffers.filter(o => {
+        if(!(o.kind === "discount" || o.kind === "freeItem" || o.kind === "addCharge") || !o.active || !o.code || o.hidden) return false;
+        const appliedForKind = o.kind === "addCharge" ? appliedCharge : appliedOffer;
+        return !appliedForKind || appliedForKind.code !== o.code;
+      });
       modal.innerHTML = `
         <h3>Payment karo</h3>
         ${isAdvance ? `<div style="background:#FFF4E0; border:1px solid var(--turmeric); border-radius:10px; padding:9px 12px; margin-bottom:12px; font-size:11.5px; display:flex; align-items:center; gap:8px;"><i class="fa-solid fa-calendar-clock" style="color:var(--turmeric); font-size:15px;"></i><span><b>Advance Order</b> — ${new Date(orderDate + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })} ke liye</span></div>` : ""}
@@ -1893,11 +1949,12 @@
             <div class="coupon-suggestions">
               ${allCodedOffers.map(o => {
                 const eligible = !o.firstOrderOnly || isFirstOrderCustomer === true;
+                const chipIcon = o.kind === "freeItem" ? "fa-gift" : o.kind === "addCharge" ? "fa-crown" : "fa-tag";
                 return `
                 <div class="coupon-chip ${eligible ? "" : "coupon-chip-disabled"}" onclick="${eligible ? `applyCouponCode('${o.code}')` : `showToast('Yeh sirf pehle order par use ho sakta hai')`}">
-                  <i class="fa-solid ${o.kind === "freeItem" ? "fa-gift" : "fa-tag"}"></i>
+                  <i class="fa-solid ${chipIcon}"></i>
                   <div><b>${o.code}</b><span>${o.label}${eligible ? "" : " • sirf pehle order ke liye"}</span></div>
-                  <div class="coupon-chip-apply">APPLY</div>
+                  <div class="coupon-chip-apply">${o.kind === "addCharge" ? "ADD" : "APPLY"}</div>
                 </div>
               `;}).join("")}
             </div>
@@ -1909,11 +1966,21 @@
             <span class="coupon-remove" onclick="removeAppliedOffer()">Hatao</span>
           </div>
         ` : ""}
+        ${appliedCharge ? `
+          <div class="coupon-applied" style="background:#FFF4E0; border-color:var(--turmeric);">
+            <span style="color:#B5651D;"><i class="fa-solid fa-crown"></i> <b>${appliedCharge.code || appliedCharge.label}</b> add ho gaya — +₹${membershipCharge}</span>
+            <span class="coupon-remove" onclick="removeAppliedCharge()">Hatao</span>
+          </div>
+        ` : ""}
         <div style="border-top:1px dashed var(--tan); padding-top:10px; margin-bottom:14px;">
-          <div style="display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:4px;"><span>Subtotal</span><span>₹${subtotal}</span></div>
+          <div style="display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:4px;"><span>Item total</span><span>₹${subtotal}</span></div>
           ${discount > 0 ? `<div style="display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:4px; color:var(--sage);"><span>${appliedOffer && appliedOffer.kind === "freeItem" ? `🎁 ${appliedOffer.label}` : (appliedOffer ? appliedOffer.label : "Discount")}</span><span>-₹${discount}</span></div>` : ""}
+          ${membershipCharge > 0 ? `<div style="display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:4px; color:#B5651D;"><span><i class="fa-solid fa-crown"></i> ${appliedCharge.label}</span><span>+₹${membershipCharge}</span></div>` : ""}
           ${fulfilment === "delivery" ? `<div style="display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:4px;"><span><i class="fa-solid fa-motorcycle"></i> Delivery Charge (${orderPersonCount} log)</span><span>₹${deliveryCharge}</span></div>` : ""}
-          <div style="display:flex; justify-content:space-between; font-size:14.5px; font-weight:700; margin-top:6px;"><span>Total</span><span>₹${total}</span></div>
+          ${extras.packagingCharge > 0 ? `<div style="display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:4px;"><span>Packaging Charge</span><span>₹${extras.packagingCharge}</span></div>` : ""}
+          ${extras.platformFee > 0 ? `<div style="display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:4px;"><span>Platform Fee</span><span>₹${extras.platformFee}</span></div>` : ""}
+          ${extras.gstAmount > 0 ? `<div style="display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:4px;"><span>GST (govt. taxes, ${extras.gstPercent}%)</span><span>₹${extras.gstAmount}</span></div>` : ""}
+          <div style="display:flex; justify-content:space-between; font-size:14.5px; font-weight:700; margin-top:6px; padding-top:8px; border-top:1px solid var(--tan);"><span>To pay</span><span>₹${total}</span></div>
         </div>
         <div class="qr-box">
           <img src="${paymentQrUrl || 'qr-code.jpg'}" alt="GharKaKhana UPI QR Code" style="width:180px; height:180px; border-radius:12px; object-fit:cover; background:var(--tan);"
@@ -1956,6 +2023,12 @@
       // sirf pehle ticket ke total mein add karte hain; har ticket mein
       // deliveryCharge field admin ko poori jaankari ke liye dikhta hai.
       const deliveryCharge = fulfilment === "delivery" ? computeDeliveryCharge(orderPersonCount) : 0;
+      // Whole-order extras (membership add-charge, platform fee, packaging,
+      // GST) — like delivery, these apply ONCE per order, not once per cook,
+      // so in a multi-cook split they're added to the first ticket only.
+      const membershipCharge = appliedCharge ? appliedCharge.amount : 0;
+      const extras = computeExtraCharges(subtotal, discountAmount);
+      const wholeOrderExtras = deliveryCharge + membershipCharge + extras.platformFee + extras.packagingCharge + extras.gstAmount;
       // Marks whether the customer booked this for a future date (vs today) —
       // drives the "Advance Order" badges/messaging on customer, admin, and
       // (once wired up) cook side, plus the cancel-window rule below.
@@ -1972,6 +2045,11 @@
         referralCode: referralCode || "",
         personCount: orderPersonCount,
         deliveryCharge: deliveryCharge,
+        membershipCharge: membershipCharge,
+        membershipLabel: appliedCharge ? appliedCharge.label : "",
+        platformFee: extras.platformFee,
+        packagingCharge: extras.packagingCharge,
+        gstAmount: extras.gstAmount,
         isAdvance: isAdvance,
       };
 
@@ -1981,7 +2059,7 @@
             const items = byCook[cookName];
             const subTotal = items.reduce((s, i) => s + i.total, 0);
             const cookDiscount = Math.round(subTotal * discountRatio);
-            const cookDeliveryCharge = idx === 0 ? deliveryCharge : 0;
+            const cookExtras = idx === 0 ? wholeOrderExtras : 0;
             db.collection("orders").doc(`${orderId}-${idx + 1}`).set({
               ...baseFields,
               item: items.map(i => i.name).join(", "),
@@ -1990,7 +2068,7 @@
               subtotal: subTotal,
               discount: cookDiscount,
               offerApplied: offerLabel,
-              total: subTotal - cookDiscount + cookDeliveryCharge,
+              total: subTotal - cookDiscount + cookExtras,
               orderGroupId: orderId,
               createdAt: firebase.firestore.FieldValue.serverTimestamp(),
             }).catch(err => console.error("Order save failed:", err));
@@ -2004,7 +2082,7 @@
             subtotal: subtotal,
             discount: discountAmount,
             offerApplied: offerLabel,
-            total: subtotal - discountAmount + deliveryCharge,
+            total: subtotal - discountAmount + wholeOrderExtras,
             createdAt: firebase.firestore.FieldValue.serverTimestamp(),
           }).catch(err => console.error("Order save failed:", err));
         }
@@ -2039,6 +2117,7 @@
       mealType = null;
       orderDate = todayISO();
       appliedOffer = null;
+      appliedCharge = null;
       isFirstOrderCustomer = null;
       orderPersonCount = 1;
       personCountManuallySet = false;
@@ -2547,8 +2626,12 @@
               <div style="border-top:1px solid var(--tan); margin-top:6px; padding-top:6px;">
                 <div style="display:flex; justify-content:space-between; margin-bottom:3px;"><span>Subtotal</span><span>₹${o.subtotal ?? o.total}</span></div>
                 ${o.discount > 0 ? `<div style="display:flex; justify-content:space-between; margin-bottom:3px; color:var(--sage);"><span>${o.offerApplied || "Discount"}</span><span>-₹${o.discount}</span></div>` : ""}
+                ${o.membershipCharge > 0 ? `<div style="display:flex; justify-content:space-between; margin-bottom:3px; color:#B5651D;"><span><i class="fa-solid fa-crown"></i> ${o.membershipLabel || "Membership"}</span><span>+₹${o.membershipCharge}</span></div>` : ""}
                 ${o.deliveryCharge > 0 ? `<div style="display:flex; justify-content:space-between; margin-bottom:3px;"><span><i class="fa-solid fa-motorcycle"></i> Delivery Charge</span><span>₹${o.deliveryCharge}</span></div>` : ""}
-                <div style="display:flex; justify-content:space-between; font-weight:700; margin-top:4px;"><span>Total</span><span>₹${o.total}</span></div>
+                ${o.packagingCharge > 0 ? `<div style="display:flex; justify-content:space-between; margin-bottom:3px;"><span>Packaging Charge</span><span>₹${o.packagingCharge}</span></div>` : ""}
+                ${o.platformFee > 0 ? `<div style="display:flex; justify-content:space-between; margin-bottom:3px;"><span>Platform Fee</span><span>₹${o.platformFee}</span></div>` : ""}
+                ${o.gstAmount > 0 ? `<div style="display:flex; justify-content:space-between; margin-bottom:3px;"><span>GST (govt. taxes)</span><span>₹${o.gstAmount}</span></div>` : ""}
+                <div style="display:flex; justify-content:space-between; font-weight:700; margin-top:4px;"><span>To pay</span><span>₹${o.total}</span></div>
               </div>
             </div>
           </div>
