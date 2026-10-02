@@ -443,6 +443,7 @@
     // count once the order is for more than perPersonThreshold people.
     deliveryRule: { minCharge: 300, perPersonThreshold: 10, perPersonRate: 10 },
     extraCharges: { platformFee: 0, packagingCharge: 0, gstPercent: 0 },
+    freeDeliveryMembers: [],
     content: { about: "", privacy: "", contact: "", whatsapp: "" },
   };
   let currentTab = "cooks";
@@ -535,6 +536,7 @@
         if(d.partnerTypes && d.partnerTypes.length) settings.partnerTypes = d.partnerTypes;
         if(d.deliveryRule) settings.deliveryRule = d.deliveryRule;
         if(d.extraCharges) settings.extraCharges = d.extraCharges;
+        if(d.freeDeliveryMembers) settings.freeDeliveryMembers = d.freeDeliveryMembers;
       } else {
         // First run — seed the catalog doc with the defaults above.
         db.collection("settings").doc("catalog").set({
@@ -542,7 +544,7 @@
           occasions: settings.occasions, events: settings.events,
           localities: settings.localities, offers: settings.offers,
           partnerTypes: settings.partnerTypes, deliveryRule: settings.deliveryRule,
-          extraCharges: settings.extraCharges,
+          extraCharges: settings.extraCharges, freeDeliveryMembers: settings.freeDeliveryMembers,
         }).catch(()=>{});
       }
       if(currentTab === "settings") renderSettings();
@@ -843,6 +845,18 @@
       </div>
 
       <div class="settings-card">
+        <h3><i class="fa-solid fa-crown"></i> Free Delivery Members</h3>
+        <p>Jab koi customer Membership le (ya koi bhi wajah se), unka phone number yahan add kar do — unke aage ke SAARE orders mein delivery charge automatically ₹0 lagega, chahe kitne bhi log ho.</p>
+        <div class="chip-list">
+          ${(settings.freeDeliveryMembers || []).map(phone => `<div class="chip">${phone}<i class="fa-solid fa-xmark" onclick="removeFreeDeliveryMember('${phone}')"></i></div>`).join("") || `<span style="font-size:11px; color:var(--text-soft);">Abhi koi member nahi hai</span>`}
+        </div>
+        <div class="chip-add-row">
+          <input type="tel" id="newMemberPhoneInput" placeholder="e.g. 9876543210">
+          <button class="btn btn-ghost btn-sm" onclick="addFreeDeliveryMember()"><i class="fa-solid fa-plus"></i>Add</button>
+        </div>
+      </div>
+
+      <div class="settings-card">
         <h3><i class="fa-solid fa-motorcycle"></i> Delivery / Rider Charge</h3>
         <p>Customer ko checkout pe yeh charge dikhega aur bill mein bhi add hoga. Chote order (${settings.deliveryRule.perPersonThreshold} logo tak) pe flat minimum lagta hai; usse zyada logo ke order pe per-person rate se calculate hota hai.</p>
         <div class="field">
@@ -987,11 +1001,27 @@
       occasions: settings.occasions, events: settings.events,
       localities: settings.localities, offers: settings.offers,
       partnerTypes: settings.partnerTypes, deliveryRule: settings.deliveryRule,
-      extraCharges: settings.extraCharges,
+      extraCharges: settings.extraCharges, freeDeliveryMembers: settings.freeDeliveryMembers,
     })
       .then(() => showToast("Update ho gaya ✓"))
       .catch(err => showToast("Error: " + err.message));
     renderSettings();
+  }
+
+  function addFreeDeliveryMember(){
+    const input = document.getElementById("newMemberPhoneInput");
+    const phone = input.value.trim();
+    if(!phone){ showToast("Phone number likho"); return; }
+    if(!settings.freeDeliveryMembers) settings.freeDeliveryMembers = [];
+    if(settings.freeDeliveryMembers.includes(phone)){ showToast("Yeh number pehle se list mein hai"); return; }
+    settings.freeDeliveryMembers.push(phone);
+    input.value = "";
+    saveCatalog();
+  }
+
+  function removeFreeDeliveryMember(phone){
+    settings.freeDeliveryMembers = (settings.freeDeliveryMembers || []).filter(p => p !== phone);
+    saveCatalog();
   }
 
   function saveExtraCharges(){
