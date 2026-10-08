@@ -1389,6 +1389,10 @@
     let customerName = localStorage.getItem("gkk_customer_name") || "";
     let customerPhone = localStorage.getItem("gkk_customer_phone") || "";
     let deliveryAddress = localStorage.getItem("gkk_customer_address") || "";
+    // Not persisted to localStorage — instructions are usually order-specific
+    // ("leave with neighbour today") so re-showing an old one by default
+    // would be more confusing than helpful on the next order.
+    let deliveryInstructions = "";
     // Referral/partner code is intentionally NOT remembered across visits —
     // commission should only ever go to a partner because the customer
     // scanned/selected them for THIS specific order, never because they
@@ -1637,6 +1641,10 @@
           <textarea id="f_address" rows="2" placeholder="Ghar/gali ka pura pata">${deliveryAddress}</textarea>
         </div>
         <div class="field">
+          <label>Delivery Instructions (optional)</label>
+          <input type="text" id="f_deliveryInstructions" value="${deliveryInstructions}" placeholder="e.g. Darwaze pe rakh dena, call mat karna">
+        </div>
+        <div class="field">
           <label>Kitne logo ke liye order hai?</label>
           <input type="number" id="f_personcount" min="1" step="1" value="${orderPersonCount}" oninput="updateDeliveryChargePreview(this.value)">
           <div id="deliveryChargePreview" style="font-size:11px; color:var(--text-soft); margin-top:4px;"></div>
@@ -1676,6 +1684,7 @@
           return;
         }
         deliveryAddress = addr;
+        deliveryInstructions = (document.getElementById("f_deliveryInstructions")?.value || "").trim();
       }
       customerName = name;
       customerPhone = phone;
@@ -2095,6 +2104,7 @@
         customer: customerName,
         customerPhone: customerPhone,
         area: fulfilment === "delivery" ? deliveryAddress : "Pickup",
+        deliveryInstructions: fulfilment === "delivery" ? deliveryInstructions : "",
         type: fulfilment === "pickup" ? "Pickup" : "Delivery",
         meal: mealLabel,
         date: orderDate,
@@ -2177,6 +2187,7 @@
       orderDate = todayISO();
       appliedOffer = null;
       appliedCharges = [];
+      deliveryInstructions = "";
       isFirstOrderCustomer = null;
       orderPersonCount = 1;
       personCountManuallySet = false;
@@ -2676,6 +2687,7 @@
             ${o.isAdvance ? `<div style="display:inline-flex; align-items:center; gap:4px; background:#FFF4E0; color:var(--turmeric); border-radius:6px; padding:2px 7px; font-size:9.5px; font-weight:700; margin-top:5px;"><i class="fa-solid fa-calendar-clock"></i> ADVANCE ORDER</div>` : ""}
             ${o.paymentVerified ? `<div style="display:inline-flex; align-items:center; gap:4px; background:#EAF4E4; color:var(--sage); border-radius:6px; padding:2px 7px; font-size:9.5px; font-weight:700; margin-top:5px;"><i class="fa-solid fa-circle-check"></i> PAYMENT VERIFIED</div>` : ""}
             <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;">
+              ${o.status !== "Declined" ? `<button class="btn btn-ghost btn-sm" onclick="showTrackOrder('${o.id}')"><i class="fa-solid fa-location-dot"></i> Track Order</button>` : ""}
               <button class="btn btn-ghost btn-sm" onclick="toggleOrderBill(${idx})"><i class="fa-solid fa-receipt"></i> Bill dekho</button>
               ${o.items ? `<button class="btn btn-ghost btn-sm" onclick="reorderPastOrder(${idx})"><i class="fa-solid fa-rotate-right"></i> Reorder karo</button>` : ""}
               ${isCancellableByCustomer(o) ? `<button class="btn btn-ghost btn-sm" style="color:var(--chili); border-color:#F3C9C0;" onclick="cancelOrderByCustomer('${o.id}')"><i class="fa-solid fa-ban"></i> Cancel karo</button>` : ""}
@@ -3256,6 +3268,65 @@ ORDER TIMINGS: ${occasionLine || "N/A"}`;
       } else {
         showManualInstallSteps();
       }
+    }
+
+    // Order status as a visual timeline — no live GPS map (that needs real
+    // rider-location infrastructure we don't have), but everything else a
+    // customer actually needs to know: where things stand, who's bringing
+    // it once a rider is assigned, and their own delivery instructions.
+    const TRACK_STEPS = [
+      { status: "Pending", label: "Order mila", icon: "fa-receipt" },
+      { status: "Confirmed", label: "Approve ho gaya", icon: "fa-check" },
+      { status: "Cooking", label: "Ban raha hai", icon: "fa-kitchen-set" },
+      { status: "Ready", label: "Taiyar / Nikal gaya", icon: "fa-bag-shopping" },
+    ];
+    function showTrackOrder(orderId){
+      const o = profileOrders.find(x => x.id === orderId);
+      if(!o) return;
+      const modal = document.getElementById("profileModal");
+      const currentIdx = o.status === "Declined" ? -1
+        : o.status && o.status.startsWith("Ready") ? 3
+        : TRACK_STEPS.findIndex(s => s.status === o.status);
+
+      modal.innerHTML = `
+        <h3>Order Track Karo</h3>
+        <p style="font-size:11px; color:var(--text-soft); margin-bottom:14px;">#${o.id} • ${o.item}</p>
+        ${o.status === "Declined" ? `
+          <div style="background:#FBEAE6; border:1px solid #F3C9C0; border-radius:10px; padding:12px; margin-bottom:14px; color:var(--chili); font-size:12.5px; text-align:center;">
+            <i class="fa-solid fa-ban"></i> Yeh order cancel ho chuka hai
+          </div>
+        ` : `
+          <div style="margin-bottom:18px;">
+            ${TRACK_STEPS.map((s, i) => `
+              <div style="display:flex; align-items:flex-start; gap:10px; ${i < TRACK_STEPS.length - 1 ? "padding-bottom:16px; border-left:2px solid " + (i < currentIdx ? "var(--sage)" : "var(--tan)") + "; margin-left:13px;" : ""}">
+                <div style="width:28px; height:28px; min-width:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; margin-left:-15px; background:${i <= currentIdx ? "var(--sage)" : "var(--cream)"}; color:${i <= currentIdx ? "white" : "var(--text-soft)"}; border:2px solid ${i <= currentIdx ? "var(--sage)" : "var(--tan)"};">
+                  <i class="fa-solid ${s.icon}" style="font-size:11px;"></i>
+                </div>
+                <div style="padding-top:4px;">
+                  <div style="font-size:12.5px; font-weight:${i === currentIdx ? "700" : "500"}; color:${i <= currentIdx ? "var(--charcoal)" : "var(--text-soft)"};">${s.label}</div>
+                  ${i === currentIdx ? `<div style="font-size:10px; color:var(--sage);">Abhi yahan hai</div>` : ""}
+                </div>
+              </div>
+            `).join("")}
+          </div>
+        `}
+        ${o.riderName ? `
+          <div style="background:var(--cream); border-radius:10px; padding:12px; margin-bottom:12px; display:flex; align-items:center; gap:10px;">
+            <div style="width:38px; height:38px; border-radius:50%; background:var(--sage); color:white; display:flex; align-items:center; justify-content:center; font-weight:700;">${o.riderName.charAt(0)}</div>
+            <div style="flex:1;">
+              <div style="font-size:12px; font-weight:700;">${o.riderName}</div>
+              <div style="font-size:10.5px; color:var(--text-soft);">Aapka delivery partner</div>
+            </div>
+            ${o.riderPhone ? `<a href="tel:${o.riderPhone}" style="width:34px; height:34px; border-radius:50%; background:var(--sage); color:white; display:flex; align-items:center; justify-content:center; text-decoration:none;"><i class="fa-solid fa-phone"></i></a>` : ""}
+          </div>
+        ` : ""}
+        ${o.deliveryInstructions ? `
+          <div style="font-size:11.5px; margin-bottom:10px;"><b>Delivery Instructions:</b> ${o.deliveryInstructions}</div>
+        ` : ""}
+        ${o.area ? `<div style="font-size:11.5px; color:var(--text-soft); margin-bottom:14px;"><i class="fa-solid fa-location-dot"></i> ${o.area}</div>` : ""}
+        <div class="modal-actions"><button class="btn btn-primary" style="flex:1;" onclick="closeProfile()">Band karo</button></div>
+      `;
+      document.getElementById("profileOverlay").classList.add("open");
     }
 
     function showManualInstallSteps(){

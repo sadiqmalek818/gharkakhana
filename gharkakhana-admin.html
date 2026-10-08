@@ -1503,11 +1503,22 @@
             ${o.orderGroupId ? `<div class="order-meta" style="color:var(--turmeric);"><i class="fa-solid fa-layer-group"></i> Apna Thaal combo — group #${o.orderGroupId} (alag cooks ke liye alag ticket)</div>` : ""}
             ${o.discount > 0 ? `<div class="order-meta" style="color:var(--sage);"><i class="fa-solid fa-tag"></i> ${o.offerApplied || "Offer"} — -₹${o.discount} (₹${o.subtotal} → ₹${o.total})</div>` : ""}
             ${o.deliveryCharge > 0 ? `<div class="order-meta"><i class="fa-solid fa-motorcycle"></i> Delivery charge (${o.personCount || 1} log) — ₹${o.deliveryCharge}, bill total mein shaamil</div>` : ""}
+            ${o.deliveryInstructions ? `<div class="order-meta" style="color:var(--turmeric);"><i class="fa-solid fa-comment-dots"></i> ${o.deliveryInstructions}</div>` : ""}
+            ${o.riderName ? `<div class="order-meta" style="color:var(--sage);"><i class="fa-solid fa-motorcycle"></i> Rider: ${o.riderName}${o.riderPhone ? ` (${o.riderPhone})` : ""}</div>` : ""}
             ${o.cancelledBy === "customer" ? `<div class="order-meta" style="color:var(--chili);"><i class="fa-solid fa-ban"></i> Customer ne khud cancel kiya</div>` : ""}
             ${o.paymentVerified ? `<div class="order-meta" style="color:var(--sage); font-weight:700;"><i class="fa-solid fa-circle-check"></i> Payment Verified ✓</div>` : `<div class="order-meta" style="color:var(--chili);"><i class="fa-solid fa-clock"></i> Payment abhi verify nahi hua</div>`}
           </div>
           <span class="badge ${o.status === "Pending" ? "inactive" : o.status === "Declined" ? "inactive" : "active"}">${o.status}</span>
         </div>
+        ${o.type === "Delivery" && o.status !== "Declined" ? `
+          <div class="field" style="margin-top:8px; margin-bottom:0;">
+            <label style="font-size:10.5px;">Rider Assign Karo</label>
+            <select onchange="assignRider('${o.id}', this.value)" style="width:100%; padding:8px; border-radius:8px; border:1px solid var(--tan); font-size:11.5px;">
+              <option value="">${o.riderName ? "— Badlo —" : "— Koi rider chuno —"}</option>
+              ${data.riders.filter(r => r.status === "active").map(r => `<option value="${r.id}" ${o.riderId === r.id ? "selected" : ""}>${r.name} (${r.phone})</option>`).join("")}
+            </select>
+          </div>
+        ` : ""}
         <div class="row-actions">
           ${!o.paymentVerified ? `<div class="icon-btn" style="color:var(--sage); border-color:#DCE7D4;" onclick="markPaymentVerified('${o.id}')"><i class="fa-solid fa-indian-rupee-sign"></i>Payment Confirm Karo</div>` : ""}
           ${o.status === "Pending" ? `
@@ -1517,6 +1528,25 @@
         </div>
       </div>
     `).join("");
+  }
+
+  // Rider assignment is its own small update — separate from the main
+  // approve/decline status flow, since admin might assign a rider well
+  // before or after approving the order itself.
+  function assignRider(orderId, riderId){
+    if(!riderId) return;
+    const rider = data.riders.find(r => r.id === riderId);
+    if(!rider) return;
+    if(!window.FIREBASE_CONFIGURED){
+      const o = data.orders.find(x => x.id === orderId);
+      if(o){ o.riderId = riderId; o.riderName = rider.name; o.riderPhone = rider.phone; }
+      showToast("Rider assign ho gaya (local demo)");
+      renderOrdersList();
+      return;
+    }
+    db.collection("orders").doc(orderId).update({ riderId, riderName: rider.name, riderPhone: rider.phone })
+      .then(() => showToast(`${rider.name} assign ho gaya ✓ — customer ko bhi dikhega`))
+      .catch(err => showToast("Error: " + err.message));
   }
 
   // Asked once, remembered on THIS device only (localStorage) — never baked
