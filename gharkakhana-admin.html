@@ -833,8 +833,9 @@
                 ${o.firstOrderOnly ? " • Sirf pehle order pe" : ""}
                 ${o.active ? "" : " • Inactive"}
               </div>
-              <div style="display:flex; gap:8px; margin-top:8px;">
+              <div style="display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;">
                 <button class="btn btn-ghost btn-sm" onclick="openOfferForm('${o.key}')"><i class="fa-solid fa-pen"></i>Edit</button>
+                <button class="btn btn-ghost btn-sm" onclick="toggleOfferActive('${o.key}')"><i class="fa-solid fa-power-off"></i>${o.active ? "Deactivate" : "Activate"}</button>
                 <button class="btn btn-ghost btn-sm" onclick="deleteOffer('${o.key}')"><i class="fa-solid fa-trash"></i>Delete</button>
               </div>
             </div>
@@ -1277,6 +1278,15 @@
     saveCatalog();
   }
 
+  // Quick on/off right from the card — no need to open full Edit just to
+  // pause an offer temporarily (e.g. a weekend-only deal during the week).
+  function toggleOfferActive(key){
+    const offer = settings.offers.find(o => o.key === key);
+    if(!offer) return;
+    offer.active = !offer.active;
+    saveCatalog();
+  }
+
   function saveContent(){
     settings.content = {
       about: document.getElementById("c_about").value.trim(),
@@ -1524,6 +1534,9 @@
           ${o.status === "Pending" ? `
             <div class="icon-btn" style="color:var(--sage); border-color:#DCE7D4;" onclick="setOrderStatus('${o.id}','Confirmed')"><i class="fa-solid fa-check"></i>Approve</div>
             <div class="icon-btn danger" onclick="setOrderStatus('${o.id}','Declined')"><i class="fa-solid fa-xmark"></i>Decline</div>
+          ` : ""}
+          ${(o.status === "Ready for pickup" || o.status === "Ready for delivery") ? `
+            <div class="icon-btn" style="color:var(--sage); border-color:#DCE7D4;" onclick="setOrderStatus('${o.id}','Completed')"><i class="fa-solid fa-circle-check"></i>${o.type === "Pickup" ? "Pickup Complete" : "Delivery Complete"}</div>
           ` : ""}
         </div>
       </div>

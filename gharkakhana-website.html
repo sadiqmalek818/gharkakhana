@@ -2764,6 +2764,7 @@
       Confirmed: "Aapka order admin ne approve kar diya — cook ke paas pahunch gaya ✓",
       Cooking: "Aapka order banna shuru ho gaya!",
       Declined: "Maaf karo, aapka order cancel kar diya gaya.",
+      Completed: "✅ Aapka order ho gaya — enjoy karo, ghar ka khana!",
     };
     // Same as above but worded for an advance (future-dated) order — makes
     // clear which order this notification is about, since the customer
@@ -2772,6 +2773,7 @@
       Confirmed: "Aapka ADVANCE order approve ho gaya ✓ — cook ne is date ke liye taiyari confirm kar di hai.",
       Cooking: "Aapka advance order banna shuru ho gaya!",
       Declined: "Aapka advance order cancel kar diya gaya hai.",
+      Completed: "✅ Aapka advance order ho gaya — enjoy karo, ghar ka khana!",
     };
     let orderStatusWatcherPhone = null; // which phone the current watcher is subscribed for
     let orderStatusWatcherUnsub = null;
@@ -3274,17 +3276,22 @@ ORDER TIMINGS: ${occasionLine || "N/A"}`;
     // rider-location infrastructure we don't have), but everything else a
     // customer actually needs to know: where things stand, who's bringing
     // it once a rider is assigned, and their own delivery instructions.
-    const TRACK_STEPS = [
-      { status: "Pending", label: "Order mila", icon: "fa-receipt" },
-      { status: "Confirmed", label: "Approve ho gaya", icon: "fa-check" },
-      { status: "Cooking", label: "Ban raha hai", icon: "fa-kitchen-set" },
-      { status: "Ready", label: "Taiyar / Nikal gaya", icon: "fa-bag-shopping" },
-    ];
+    function trackStepsFor(order){
+      return [
+        { status: "Pending", label: "Order mila", icon: "fa-receipt" },
+        { status: "Confirmed", label: "Approve ho gaya", icon: "fa-check" },
+        { status: "Cooking", label: "Ban raha hai", icon: "fa-kitchen-set" },
+        { status: "Ready", label: order.type === "Pickup" ? "Pickup ke liye taiyar" : "Nikal gaya", icon: "fa-bag-shopping" },
+        { status: "Completed", label: order.type === "Pickup" ? "Pickup ho gaya ✓" : "Deliver ho gaya ✓", icon: "fa-circle-check" },
+      ];
+    }
     function showTrackOrder(orderId){
       const o = profileOrders.find(x => x.id === orderId);
       if(!o) return;
       const modal = document.getElementById("profileModal");
+      const TRACK_STEPS = trackStepsFor(o);
       const currentIdx = o.status === "Declined" ? -1
+        : o.status === "Completed" ? 4
         : o.status && o.status.startsWith("Ready") ? 3
         : TRACK_STEPS.findIndex(s => s.status === o.status);
 
