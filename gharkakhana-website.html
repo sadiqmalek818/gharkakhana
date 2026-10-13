@@ -352,15 +352,18 @@
     scrollbar-width:none; -ms-overflow-style:none;
   }
   .dish-scroll::-webkit-scrollbar{display:none;}
-  .dish-chip{flex:0 0 auto; width:70px; text-align:center; cursor:pointer; opacity:0.7;}
+  .dish-chip{flex:0 0 auto; width:92px; text-align:center; cursor:pointer; opacity:0.7;}
   .dish-chip.active{opacity:1;}
-  .dish-media.chip{width:70px; height:70px; border-radius:14px; border:2px solid transparent;}
+  .dish-media.chip{width:92px; height:92px; border-radius:14px; border:2px solid transparent;}
+  .dish-hero{width:100%; height:180px; border-radius:14px; overflow:hidden; margin-bottom:12px; background:var(--tan);}
+  .dish-hero img{width:100%; height:100%; object-fit:cover; display:block;}
+  .dish-hero-placeholder{width:100%; height:100%; display:flex; align-items:center; justify-content:center; color:var(--text-soft); font-size:30px;}
   .dish-chip.active .dish-media.chip{border-color:var(--chili);}
-  .dish-chip .dm-icon{font-size:26px;}
+  .dish-chip .dm-icon{font-size:30px;}
   .dish-chip .dm-vegdot{width:12px; height:12px; top:5px; left:5px;}
   .dish-chip-name{
-    font-size:10px; font-weight:700; margin-top:5px; color:var(--charcoal);
-    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; width:70px;
+    font-size:10.5px; font-weight:700; margin-top:5px; color:var(--charcoal);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; width:92px;
   }
   .order-panel{border-top:1px dashed var(--tan); padding-top:12px;}
   .order-panel .dish-name{font-size:14px; font-weight:700;}
@@ -1199,6 +1202,9 @@
         .slice(0, 6);
 
       panel.innerHTML = `
+        ${item.photoUrl ? `
+        <div class="dish-hero"><img src="${item.photoUrl}" alt="${item.name}"></div>
+        ` : ""}
         <div class="dish-top">
           <div>
             <div class="dish-name">${item.name}</div>
