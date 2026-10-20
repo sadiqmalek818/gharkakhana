@@ -521,7 +521,9 @@
       ordersLoadedOnce = true;
     }, err => showFirestoreError(err));
     db.collection("settings").doc("payment").onSnapshot(doc => {
-      settings.qrUrl = doc.exists ? (doc.data().qrUrl || "") : "";
+      const d = doc.exists ? doc.data() : {};
+      settings.qrUrl = d.qrUrl || "";
+      settings.upiId = d.upiId || "";
       if(currentTab === "settings") renderSettings();
     }, err => showFirestoreError(err));
     db.collection("settings").doc("catalog").onSnapshot(doc => {
@@ -695,12 +697,17 @@
     box.innerHTML = `
       <div class="settings-card">
         <h3><i class="fa-solid fa-qrcode"></i> Payment QR (Customer ko dikhega)</h3>
-        <p>Ye QR customer ko checkout ke waqt dikhega. Sab payments isi QR pe aayenge, jo admin ke paas jaate hain.</p>
+        <p>Apna UPI ID (VPA) neeche daalo — isse har order ka <b>exact amount automatically QR mein bhar jayega</b>, customer ko khud type nahi karna padega. UPI ID khaali chodoge to purani uploaded photo wali QR chalegi (usme amount manually bharna padta hai).</p>
+        <div class="field">
+          <label>UPI ID (VPA) — jaise 9898535818@slc</label>
+          <input type="text" id="s_upiId" value="${settings.upiId || ''}" placeholder="e.g. 9898535818@slc">
+        </div>
+        <p style="margin-top:0;">Neeche wali photo sirf tab dikhegi jab UPI ID khaali ho (fallback ke liye):</p>
         ${settings.qrUrl ? `<img class="settings-qr-preview" src="${settings.qrUrl}">` : `<div class="settings-qr-preview" style="display:flex;align-items:center;justify-content:center;color:var(--text-soft);font-size:11px;text-align:center;padding:10px;"><i class="fa-solid fa-qrcode" style="font-size:24px;display:block;margin-bottom:6px;"></i>Abhi koi QR nahi hai</div>`}
         <label class="file-btn" for="s_qr"><i class="fa-solid fa-camera"></i>QR Photo Chuno</label>
         <input type="file" accept="image/*" id="s_qr" onchange="pickSettingsQR(this)" style="display:none;">
         <div class="modal-actions" style="margin-top:12px;">
-          <button class="btn btn-primary" style="flex:1;" onclick="savePaymentQR()"><i class="fa-solid fa-floppy-disk"></i>QR Save Karo</button>
+          <button class="btn btn-primary" style="flex:1;" onclick="savePaymentQR()"><i class="fa-solid fa-floppy-disk"></i>Save Karo</button>
         </div>
       </div>
 
@@ -1377,15 +1384,20 @@
   }
 
   function savePaymentQR(){
-    if(!pendingSettingsQR){ showToast("Pehle QR photo chuno"); return; }
+    const upiId = document.getElementById("s_upiId").value.trim();
+    // Keep whatever photo was already saved unless admin picked a new one —
+    // UPI ID alone should be saveable without re-uploading the fallback photo.
+    const qrUrl = pendingSettingsQR || settings.qrUrl || "";
+    if(!upiId && !qrUrl){ showToast("UPI ID daalo ya QR photo chuno"); return; }
+    settings.upiId = upiId;
+    settings.qrUrl = qrUrl;
     if(!window.FIREBASE_CONFIGURED){
-      settings.qrUrl = pendingSettingsQR;
-      showToast("QR save ho gaya (local demo, save nahi hoga)");
+      showToast("Save ho gaya (local demo, save nahi hoga)");
       renderSettings();
       return;
     }
-    db.collection("settings").doc("payment").set({ qrUrl: pendingSettingsQR })
-      .then(() => showToast("Payment QR update ho gaya ✓"))
+    db.collection("settings").doc("payment").set({ qrUrl, upiId })
+      .then(() => showToast("Payment settings update ho gaye ✓ — ab har order mein amount automatic bharega"))
       .catch(err => showToast("Error: " + err.message));
   }
 

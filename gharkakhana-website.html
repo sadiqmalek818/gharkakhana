@@ -1257,6 +1257,11 @@
     // is the chosen quantity in that dish's own unit (kg/piece/box/etc.).
     let manualComboQty = {};
     let paymentQrUrl = ""; // set live by admin from Settings tab; falls back to qr-code.jpg if empty
+    // Admin's real UPI ID (VPA) — when set, we generate a FRESH QR per order
+    // with the exact amount baked in (upi://pay?...&am=X), so scanning opens
+    // the UPI app with the total already filled instead of the customer
+    // having to type it in manually.
+    let siteUpiId = "";
     let sitePartners = []; // active Farmhouse/Club/Tour-Operator partners — for the "ya list se chuno" fallback
     let offerSpotlightChecked = false; // ensures the daily offer popup only ever runs once per catalog load
 
@@ -1276,7 +1281,9 @@
         sitePartners = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(p => p.status === "active");
       }, err => console.error("Partners load failed:", err));
       db.collection("settings").doc("payment").onSnapshot(doc => {
-        paymentQrUrl = doc.exists ? (doc.data().qrUrl || "") : "";
+        const d = doc.exists ? doc.data() : {};
+        paymentQrUrl = d.qrUrl || "";
+        siteUpiId = d.upiId || "";
       }, err => console.error("Settings load failed:", err));
       db.collection("settings").doc("catalog").onSnapshot(doc => {
         const d = doc.exists ? doc.data() : {};
@@ -2055,16 +2062,30 @@
           <div style="display:flex; justify-content:space-between; font-size:14.5px; font-weight:700; margin-top:6px; padding-top:8px; border-top:1px solid var(--tan);"><span>To pay</span><span>₹${total}</span></div>
         </div>
         <div class="qr-box">
-          <img src="${paymentQrUrl || 'qr-code.jpg'}" alt="GharKaKhana UPI QR Code" style="width:180px; height:180px; border-radius:12px; object-fit:cover; background:var(--tan);"
-               onerror="this.onerror=null; this.outerHTML='<div style=&quot;width:180px;height:180px;border-radius:12px;background:var(--tan);display:flex;align-items:center;justify-content:center;text-align:center;font-size:11px;color:var(--text-soft);padding:10px;&quot;><i class=&quot;fa-solid fa-qrcode&quot; style=&quot;font-size:26px;display:block;margin-bottom:6px;&quot;></i>Payment QR abhi set nahi hai</div>';">
-          <div class="qr-amount">₹${total}</div>
-          <div class="qr-note">Kisi bhi UPI app (GPay, PhonePe, Paytm) se ye QR scan karo aur ₹${total} bhejo</div>
+          ${siteUpiId ? `
+            <div id="dynamicQrBox" style="width:180px; height:180px; display:flex; align-items:center; justify-content:center;"></div>
+            <div class="qr-amount">₹${total}</div>
+            <div class="qr-note"><i class="fa-solid fa-circle-check" style="color:var(--sage);"></i> Amount already set hai — scan karte hi ₹${total} dikhega, bas confirm karna</div>
+          ` : `
+            <img src="${paymentQrUrl || 'qr-code.jpg'}" alt="GharKaKhana UPI QR Code" style="width:180px; height:180px; border-radius:12px; object-fit:cover; background:var(--tan);"
+                 onerror="this.onerror=null; this.outerHTML='<div style=&quot;width:180px;height:180px;border-radius:12px;background:var(--tan);display:flex;align-items:center;justify-content:center;text-align:center;font-size:11px;color:var(--text-soft);padding:10px;&quot;><i class=&quot;fa-solid fa-qrcode&quot; style=&quot;font-size:26px;display:block;margin-bottom:6px;&quot;></i>Payment QR abhi set nahi hai</div>';">
+            <div class="qr-amount">₹${total}</div>
+            <div class="qr-note">Kisi bhi UPI app (GPay, PhonePe, Paytm) se ye QR scan karo aur ₹${total} bhejo</div>
+          `}
         </div>
         <div class="modal-actions">
           <button class="btn btn-ghost" style="flex:1;" onclick="renderMealTimeStep()">Wapas</button>
           <button class="btn btn-primary" style="flex:1;" onclick="confirmPaymentDone()">Maine payment kar diya</button>
         </div>
       `;
+      if(siteUpiId){
+        const box = document.getElementById("dynamicQrBox");
+        if(box){
+          box.innerHTML = "";
+          const upiUri = `upi://pay?pa=${encodeURIComponent(siteUpiId)}&pn=${encodeURIComponent("GharKaKhana")}&am=${total.toFixed(2)}&cu=INR&tn=${encodeURIComponent("Order " + orderDate)}`;
+          new QRCode(box, { text: upiUri, width: 180, height: 180, colorDark: "#2B1B17", colorLight: "#FBF3E7" });
+        }
+      }
     }
 
     function confirmPaymentDone(){
