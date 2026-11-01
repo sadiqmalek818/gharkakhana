@@ -981,6 +981,9 @@
     const DEFAULT_EXTRA_CHARGES = { platformFee: 0, packagingCharge: 0, gstPercent: 0 };
     let siteExtraCharges = DEFAULT_EXTRA_CHARGES;
     let siteFreeDeliveryMembers = []; // phone numbers admin has marked (e.g. via Membership) as free-delivery-for-life
+    let siteTokenAmounts = []; // admin-configured token/advance amounts customer can choose instead of full bill
+    let selectedPaymentType = "full"; // "full" | "token"
+    let selectedTokenAmount = 0;
     function computeDeliveryCharge(personCount){
       // Admin can mark a customer's phone as a free-delivery member (e.g.
       // after they bought a Membership) — this overrides the normal
@@ -1303,6 +1306,7 @@
         siteDeliveryRule = d.deliveryRule || DEFAULT_DELIVERY_RULE;
         siteExtraCharges = d.extraCharges || DEFAULT_EXTRA_CHARGES;
         siteFreeDeliveryMembers = d.freeDeliveryMembers || [];
+        siteTokenAmounts = d.tokenAmounts || [];
         // Delivery charge (shown at Payment step) depends on this rule, so if
         // the customer is already sitting on that step when admin edits it,
         // refresh the figure live instead of leaving a stale amount on screen.
@@ -1796,6 +1800,17 @@
       renderPaymentStep();
     }
 
+    function setPaymentType(type){
+      selectedPaymentType = type;
+      if(type === "token" && !selectedTokenAmount && siteTokenAmounts.length) selectedTokenAmount = siteTokenAmounts[0];
+      renderPaymentStep();
+    }
+
+    function selectTokenAmount(amt){
+      selectedTokenAmount = amt;
+      renderPaymentStep();
+    }
+
     // The fixed per-order extras from Admin > Settings > Extra Charges.
     // Every value here is 0 unless admin deliberately sets one, and a 0
     // never shows up as a line on the bill — so this stays invisible to
@@ -2002,6 +2017,13 @@
       const membershipCharge = totalAppliedCharges();
       const extras = computeExtraCharges(subtotal, discount);
       const total = subtotal - discount + deliveryCharge + membershipCharge + extras.platformFee + extras.packagingCharge + extras.gstAmount;
+      // Token payment: customer can pay just an advance instead of the full
+      // bill (admin-configured amounts) — the QR/amount shown is whatever
+      // they actually owe RIGHT NOW, with the rest due at delivery/pickup.
+      if(selectedPaymentType === "token" && (!selectedTokenAmount || selectedTokenAmount >= total)){
+        selectedPaymentType = "full"; // guard against a stale token choice no longer valid for this total
+      }
+      const payableNow = selectedPaymentType === "token" ? selectedTokenAmount : total;
       const isAdvance = orderDate !== todayISO();
       // Show every active coded offer — including ones the customer isn't
       // eligible for right now — so nothing feels hidden. Ineligible ones
@@ -2059,18 +2081,33 @@
           ${extras.packagingCharge > 0 ? `<div style="display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:4px;"><span>Packaging Charge</span><span>₹${extras.packagingCharge}</span></div>` : ""}
           ${extras.platformFee > 0 ? `<div style="display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:4px;"><span>Platform Fee</span><span>₹${extras.platformFee}</span></div>` : ""}
           ${extras.gstAmount > 0 ? `<div style="display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:4px;"><span>GST (govt. taxes, ${extras.gstPercent}%)</span><span>₹${extras.gstAmount}</span></div>` : ""}
-          <div style="display:flex; justify-content:space-between; font-size:14.5px; font-weight:700; margin-top:6px; padding-top:8px; border-top:1px solid var(--tan);"><span>To pay</span><span>₹${total}</span></div>
+          <div style="display:flex; justify-content:space-between; font-size:14.5px; font-weight:700; margin-top:6px; padding-top:8px; border-top:1px solid var(--tan);"><span>Total Bill</span><span>₹${total}</span></div>
         </div>
+        ${siteTokenAmounts.filter(a => a < total).length ? `
+          <div class="coupon-box" style="margin-bottom:14px;">
+            <div style="font-size:12px; font-weight:700; margin-bottom:8px;"><i class="fa-solid fa-coins" style="color:var(--turmeric);"></i> Kitna pay karna hai?</div>
+            <div style="display:flex; gap:8px; margin-bottom:${selectedPaymentType === "token" ? "10px" : "0"};">
+              <div onclick="setPaymentType('full')" style="flex:1; text-align:center; padding:9px; border-radius:10px; border:1.5px solid ${selectedPaymentType === "full" ? "var(--chili)" : "var(--tan)"}; background:${selectedPaymentType === "full" ? "#FBEAE6" : "white"}; cursor:pointer; font-size:11.5px; font-weight:700; color:${selectedPaymentType === "full" ? "var(--chili)" : "var(--charcoal)"};">Pura Bill (₹${total})</div>
+              <div onclick="setPaymentType('token')" style="flex:1; text-align:center; padding:9px; border-radius:10px; border:1.5px solid ${selectedPaymentType === "token" ? "var(--chili)" : "var(--tan)"}; background:${selectedPaymentType === "token" ? "#FBEAE6" : "white"}; cursor:pointer; font-size:11.5px; font-weight:700; color:${selectedPaymentType === "token" ? "var(--chili)" : "var(--charcoal)"};">Token/Advance</div>
+            </div>
+            ${selectedPaymentType === "token" ? `
+              <div style="display:flex; gap:7px; flex-wrap:wrap;">
+                ${siteTokenAmounts.filter(a => a < total).map(a => `<div onclick="selectTokenAmount(${a})" style="padding:7px 14px; border-radius:20px; border:1.5px solid ${selectedTokenAmount === a ? "var(--sage)" : "var(--tan)"}; background:${selectedTokenAmount === a ? "var(--sage)" : "white"}; color:${selectedTokenAmount === a ? "white" : "var(--charcoal)"}; font-size:12px; font-weight:700; cursor:pointer;">₹${a}</div>`).join("")}
+              </div>
+              <div style="font-size:11px; color:var(--text-soft); margin-top:8px;">Baaki <b>₹${Math.max(0, total - selectedTokenAmount)}</b> delivery/pickup ke waqt dena hoga.</div>
+            ` : ""}
+          </div>
+        ` : ""}
         <div class="qr-box">
           ${siteUpiId ? `
             <div id="dynamicQrBox" style="width:180px; height:180px; display:flex; align-items:center; justify-content:center;"></div>
-            <div class="qr-amount">₹${total}</div>
-            <div class="qr-note"><i class="fa-solid fa-circle-check" style="color:var(--sage);"></i> Amount already set hai — scan karte hi ₹${total} dikhega, bas confirm karna</div>
+            <div class="qr-amount">₹${payableNow}</div>
+            <div class="qr-note"><i class="fa-solid fa-circle-check" style="color:var(--sage);"></i> Amount already set hai — scan karte hi ₹${payableNow} dikhega, bas confirm karna</div>
           ` : `
             <img src="${paymentQrUrl || 'qr-code.jpg'}" alt="GharKaKhana UPI QR Code" style="width:180px; height:180px; border-radius:12px; object-fit:cover; background:var(--tan);"
                  onerror="this.onerror=null; this.outerHTML='<div style=&quot;width:180px;height:180px;border-radius:12px;background:var(--tan);display:flex;align-items:center;justify-content:center;text-align:center;font-size:11px;color:var(--text-soft);padding:10px;&quot;><i class=&quot;fa-solid fa-qrcode&quot; style=&quot;font-size:26px;display:block;margin-bottom:6px;&quot;></i>Payment QR abhi set nahi hai</div>';">
-            <div class="qr-amount">₹${total}</div>
-            <div class="qr-note">Kisi bhi UPI app (GPay, PhonePe, Paytm) se ye QR scan karo aur ₹${total} bhejo</div>
+            <div class="qr-amount">₹${payableNow}</div>
+            <div class="qr-note">Kisi bhi UPI app (GPay, PhonePe, Paytm) se ye QR scan karo aur ₹${payableNow} bhejo</div>
           `}
         </div>
         <div class="modal-actions">
@@ -2082,7 +2119,7 @@
         const box = document.getElementById("dynamicQrBox");
         if(box){
           box.innerHTML = "";
-          const upiUri = `upi://pay?pa=${encodeURIComponent(siteUpiId)}&pn=${encodeURIComponent("GharKaKhana")}&am=${total.toFixed(2)}&cu=INR&tn=${encodeURIComponent("Order " + orderDate)}`;
+          const upiUri = `upi://pay?pa=${encodeURIComponent(siteUpiId)}&pn=${encodeURIComponent("GharKaKhana")}&am=${payableNow.toFixed(2)}&cu=INR&tn=${encodeURIComponent("Order " + orderDate)}`;
           new QRCode(box, { text: upiUri, width: 180, height: 180, colorDark: "#2B1B17", colorLight: "#FBF3E7" });
         }
       }
@@ -2122,6 +2159,14 @@
       const membershipCharge = totalAppliedCharges();
       const extras = computeExtraCharges(subtotal, discountAmount);
       const wholeOrderExtras = deliveryCharge + membershipCharge + extras.platformFee + extras.packagingCharge + extras.gstAmount;
+      const grandTotal = subtotal - discountAmount + wholeOrderExtras;
+      // Token payment — if the customer chose to pay only an advance, the
+      // rest is tracked as balanceDue so admin/cook/customer all see what's
+      // still owed at delivery/pickup. Guard against a stale token choice
+      // that's no longer valid (>= total) by quietly falling back to full.
+      const isTokenPayment = selectedPaymentType === "token" && selectedTokenAmount > 0 && selectedTokenAmount < grandTotal;
+      const amountPaidNow = isTokenPayment ? selectedTokenAmount : grandTotal;
+      const balanceDue = grandTotal - amountPaidNow;
       // Marks whether the customer booked this for a future date (vs today) —
       // drives the "Advance Order" badges/messaging on customer, admin, and
       // (once wired up) cook side, plus the cancel-window rule below.
@@ -2143,6 +2188,9 @@
         // Multiple add-charges can stack (e.g. Membership + Donation) — join
         // their labels so admin/cook can see what this amount is made of.
         membershipLabel: appliedCharges.map(c => c.label).join(" + "),
+        paymentType: isTokenPayment ? "token" : "full",
+        amountPaidNow: amountPaidNow,
+        balanceDue: balanceDue,
         platformFee: extras.platformFee,
         packagingCharge: extras.packagingCharge,
         gstAmount: extras.gstAmount,
@@ -2215,6 +2263,8 @@
       appliedOffer = null;
       appliedCharges = [];
       deliveryInstructions = "";
+      selectedPaymentType = "full";
+      selectedTokenAmount = 0;
       isFirstOrderCustomer = null;
       orderPersonCount = 1;
       personCountManuallySet = false;
@@ -2713,6 +2763,7 @@
             <div style="font-size:10.5px; color:var(--text-soft); margin-top:3px;"><i class="fa-solid fa-calendar-day"></i> ${o.date} &nbsp;•&nbsp; ${o.meal || ""} &nbsp;•&nbsp; ${o.cook} &nbsp;•&nbsp; ₹${o.total}</div>
             ${o.isAdvance ? `<div style="display:inline-flex; align-items:center; gap:4px; background:#FFF4E0; color:var(--turmeric); border-radius:6px; padding:2px 7px; font-size:9.5px; font-weight:700; margin-top:5px;"><i class="fa-solid fa-calendar-clock"></i> ADVANCE ORDER</div>` : ""}
             ${o.paymentVerified ? `<div style="display:inline-flex; align-items:center; gap:4px; background:#EAF4E4; color:var(--sage); border-radius:6px; padding:2px 7px; font-size:9.5px; font-weight:700; margin-top:5px;"><i class="fa-solid fa-circle-check"></i> PAYMENT VERIFIED</div>` : ""}
+            ${o.paymentType === "token" && o.balanceDue > 0 ? `<div style="display:inline-flex; align-items:center; gap:4px; background:#FFF4E0; color:#B5651D; border-radius:6px; padding:2px 7px; font-size:9.5px; font-weight:700; margin-top:5px; margin-left:4px;"><i class="fa-solid fa-coins"></i> TOKEN ₹${o.amountPaidNow} • BAAKI ₹${o.balanceDue}</div>` : ""}
             <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;">
               ${o.status !== "Declined" ? `<button class="btn btn-ghost btn-sm" onclick="showTrackOrder('${o.id}')"><i class="fa-solid fa-location-dot"></i> Track Order</button>` : ""}
               <button class="btn btn-ghost btn-sm" onclick="toggleOrderBill(${idx})"><i class="fa-solid fa-receipt"></i> Bill dekho</button>
@@ -3352,6 +3403,11 @@ ORDER TIMINGS: ${occasionLine || "N/A"}`;
               <div style="font-size:10.5px; color:var(--text-soft);">Aapka delivery partner</div>
             </div>
             ${o.riderPhone ? `<a href="tel:${o.riderPhone}" style="width:34px; height:34px; border-radius:50%; background:var(--sage); color:white; display:flex; align-items:center; justify-content:center; text-decoration:none;"><i class="fa-solid fa-phone"></i></a>` : ""}
+          </div>
+        ` : ""}
+        ${o.paymentType === "token" && o.balanceDue > 0 ? `
+          <div style="background:#FFF4E0; border:1px solid var(--turmeric); border-radius:10px; padding:10px 12px; margin-bottom:12px; font-size:12px;">
+            <i class="fa-solid fa-coins" style="color:var(--turmeric);"></i> <b>Token ₹${o.amountPaidNow}</b> pay ho chuka hai — baaki <b>₹${o.balanceDue}</b> ${o.type === "Pickup" ? "pickup" : "delivery"} ke waqt dena hoga.
           </div>
         ` : ""}
         ${o.deliveryInstructions ? `

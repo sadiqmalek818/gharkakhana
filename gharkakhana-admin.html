@@ -444,6 +444,7 @@
     deliveryRule: { minCharge: 300, perPersonThreshold: 10, perPersonRate: 10 },
     extraCharges: { platformFee: 0, packagingCharge: 0, gstPercent: 0 },
     freeDeliveryMembers: [],
+    tokenAmounts: [],
     content: { about: "", privacy: "", contact: "", whatsapp: "" },
   };
   let currentTab = "cooks";
@@ -539,6 +540,7 @@
         if(d.deliveryRule) settings.deliveryRule = d.deliveryRule;
         if(d.extraCharges) settings.extraCharges = d.extraCharges;
         if(d.freeDeliveryMembers) settings.freeDeliveryMembers = d.freeDeliveryMembers;
+        if(d.tokenAmounts) settings.tokenAmounts = d.tokenAmounts;
       } else {
         // First run — seed the catalog doc with the defaults above.
         db.collection("settings").doc("catalog").set({
@@ -546,7 +548,7 @@
           occasions: settings.occasions, events: settings.events,
           localities: settings.localities, offers: settings.offers,
           partnerTypes: settings.partnerTypes, deliveryRule: settings.deliveryRule,
-          extraCharges: settings.extraCharges, freeDeliveryMembers: settings.freeDeliveryMembers,
+          extraCharges: settings.extraCharges, freeDeliveryMembers: settings.freeDeliveryMembers, tokenAmounts: settings.tokenAmounts,
         }).catch(()=>{});
       }
       if(currentTab === "settings") renderSettings();
@@ -865,6 +867,18 @@
       </div>
 
       <div class="settings-card">
+        <h3><i class="fa-solid fa-coins"></i> Token Payment</h3>
+        <p>Bade order (jaise catering, bulk) ke liye customer poora bill na deke sirf ek "token" amount pay kar sake — baaki delivery ke waqt. Yahan jo bhi amounts daaloge, customer ko checkout pe choose karne ke liye dikhenge. Khaali rakhoge to yeh option customer ko dikhega hi nahi.</p>
+        <div class="chip-list">
+          ${(settings.tokenAmounts || []).map(amt => `<div class="chip">₹${amt}<i class="fa-solid fa-xmark" onclick="removeTokenAmount(${amt})"></i></div>`).join("") || `<span style="font-size:11px; color:var(--text-soft);">Abhi koi token amount nahi hai</span>`}
+        </div>
+        <div class="chip-add-row">
+          <input type="number" id="newTokenAmountInput" min="1" placeholder="e.g. 500">
+          <button class="btn btn-ghost btn-sm" onclick="addTokenAmount()"><i class="fa-solid fa-plus"></i>Add</button>
+        </div>
+      </div>
+
+      <div class="settings-card">
         <h3><i class="fa-solid fa-motorcycle"></i> Delivery / Rider Charge</h3>
         <p>Customer ko checkout pe yeh charge dikhega aur bill mein bhi add hoga. Chote order (${settings.deliveryRule.perPersonThreshold} logo tak) pe flat minimum lagta hai; usse zyada logo ke order pe per-person rate se calculate hota hai.</p>
         <div class="field">
@@ -1009,7 +1023,7 @@
       occasions: settings.occasions, events: settings.events,
       localities: settings.localities, offers: settings.offers,
       partnerTypes: settings.partnerTypes, deliveryRule: settings.deliveryRule,
-      extraCharges: settings.extraCharges, freeDeliveryMembers: settings.freeDeliveryMembers,
+      extraCharges: settings.extraCharges, freeDeliveryMembers: settings.freeDeliveryMembers, tokenAmounts: settings.tokenAmounts,
     })
       .then(() => showToast("Update ho gaya ✓"))
       .catch(err => showToast("Error: " + err.message));
@@ -1029,6 +1043,23 @@
 
   function removeFreeDeliveryMember(phone){
     settings.freeDeliveryMembers = (settings.freeDeliveryMembers || []).filter(p => p !== phone);
+    saveCatalog();
+  }
+
+  function addTokenAmount(){
+    const input = document.getElementById("newTokenAmountInput");
+    const amt = Math.round(parseFloat(input.value));
+    if(!amt || amt <= 0){ showToast("Sahi amount daalo"); return; }
+    if(!settings.tokenAmounts) settings.tokenAmounts = [];
+    if(settings.tokenAmounts.includes(amt)){ showToast("Yeh amount pehle se list mein hai"); return; }
+    settings.tokenAmounts.push(amt);
+    settings.tokenAmounts.sort((a, b) => a - b);
+    input.value = "";
+    saveCatalog();
+  }
+
+  function removeTokenAmount(amt){
+    settings.tokenAmounts = (settings.tokenAmounts || []).filter(a => a !== amt);
     saveCatalog();
   }
 
@@ -1525,6 +1556,7 @@
             ${o.orderGroupId ? `<div class="order-meta" style="color:var(--turmeric);"><i class="fa-solid fa-layer-group"></i> Apna Thaal combo — group #${o.orderGroupId} (alag cooks ke liye alag ticket)</div>` : ""}
             ${o.discount > 0 ? `<div class="order-meta" style="color:var(--sage);"><i class="fa-solid fa-tag"></i> ${o.offerApplied || "Offer"} — -₹${o.discount} (₹${o.subtotal} → ₹${o.total})</div>` : ""}
             ${o.deliveryCharge > 0 ? `<div class="order-meta"><i class="fa-solid fa-motorcycle"></i> Delivery charge (${o.personCount || 1} log) — ₹${o.deliveryCharge}, bill total mein shaamil</div>` : ""}
+            ${o.paymentType === "token" ? `<div class="order-meta" style="color:#B5651D; font-weight:700;"><i class="fa-solid fa-coins"></i> Token Payment: ₹${o.amountPaidNow} mila • Baaki ₹${o.balanceDue} delivery/pickup pe lena hai</div>` : ""}
             ${o.deliveryInstructions ? `<div class="order-meta" style="color:var(--turmeric);"><i class="fa-solid fa-comment-dots"></i> ${o.deliveryInstructions}</div>` : ""}
             ${o.riderName ? `<div class="order-meta" style="color:var(--sage);"><i class="fa-solid fa-motorcycle"></i> Rider: ${o.riderName}${o.riderPhone ? ` (${o.riderPhone})` : ""}</div>` : ""}
             ${o.cancelledBy === "customer" ? `<div class="order-meta" style="color:var(--chili);"><i class="fa-solid fa-ban"></i> Customer ne khud cancel kiya</div>` : ""}
