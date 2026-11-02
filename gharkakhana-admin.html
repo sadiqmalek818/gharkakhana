@@ -1088,7 +1088,7 @@
     fetch("https://gharkakhana-kappa.vercel.app/api/send-notification", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ secret, title, body, url: "/gharkakhana/gharkakhana-website.html" }),
+      body: JSON.stringify({ secret, title, body, url: "gharkakhana-website.html" }),
     })
       .then(r => r.json())
       .then(data => {
@@ -1556,7 +1556,8 @@
             ${o.orderGroupId ? `<div class="order-meta" style="color:var(--turmeric);"><i class="fa-solid fa-layer-group"></i> Apna Thaal combo — group #${o.orderGroupId} (alag cooks ke liye alag ticket)</div>` : ""}
             ${o.discount > 0 ? `<div class="order-meta" style="color:var(--sage);"><i class="fa-solid fa-tag"></i> ${o.offerApplied || "Offer"} — -₹${o.discount} (₹${o.subtotal} → ₹${o.total})</div>` : ""}
             ${o.deliveryCharge > 0 ? `<div class="order-meta"><i class="fa-solid fa-motorcycle"></i> Delivery charge (${o.personCount || 1} log) — ₹${o.deliveryCharge}, bill total mein shaamil</div>` : ""}
-            ${o.paymentType === "token" ? `<div class="order-meta" style="color:#B5651D; font-weight:700;"><i class="fa-solid fa-coins"></i> Token Payment: ₹${o.amountPaidNow} mila • Baaki ₹${o.balanceDue} delivery/pickup pe lena hai</div>` : ""}
+            ${o.paymentType === "token" && o.balanceDue > 0 ? `<div class="order-meta" style="color:#B5651D; font-weight:700;"><i class="fa-solid fa-coins"></i> Token Payment: ₹${o.amountPaidNow} mila • Baaki ₹${o.balanceDue} delivery/pickup pe lena hai</div>` : ""}
+            ${o.paymentType === "token" && o.balanceClearedAmount > 0 ? `<div class="order-meta" style="color:var(--sage); font-weight:700;"><i class="fa-solid fa-circle-check"></i> Payment Clear ✓ — token ₹${o.amountPaidNow} + baaki ₹${o.balanceClearedAmount} mil gaya</div>` : ""}
             ${o.deliveryInstructions ? `<div class="order-meta" style="color:var(--turmeric);"><i class="fa-solid fa-comment-dots"></i> ${o.deliveryInstructions}</div>` : ""}
             ${o.riderName ? `<div class="order-meta" style="color:var(--sage);"><i class="fa-solid fa-motorcycle"></i> Rider: ${o.riderName}${o.riderPhone ? ` (${o.riderPhone})` : ""}</div>` : ""}
             ${o.cancelledBy === "customer" ? `<div class="order-meta" style="color:var(--chili);"><i class="fa-solid fa-ban"></i> Customer ne khud cancel kiya</div>` : ""}
@@ -1575,6 +1576,7 @@
         ` : ""}
         <div class="row-actions">
           ${!o.paymentVerified ? `<div class="icon-btn" style="color:var(--sage); border-color:#DCE7D4;" onclick="markPaymentVerified('${o.id}')"><i class="fa-solid fa-indian-rupee-sign"></i>Payment Confirm Karo</div>` : ""}
+          ${o.paymentType === "token" && o.balanceDue > 0 && o.status !== "Declined" ? `<div class="icon-btn" style="color:#B5651D; border-color:#F0D9B5;" onclick="markBalanceReceived('${o.id}')"><i class="fa-solid fa-hand-holding-dollar"></i>Baaki ₹${o.balanceDue} Mil Gaya</div>` : ""}
           ${o.status === "Pending" ? `
             <div class="icon-btn" style="color:var(--sage); border-color:#DCE7D4;" onclick="setOrderStatus('${o.id}','Confirmed')"><i class="fa-solid fa-check"></i>Approve</div>
             <div class="icon-btn danger" onclick="setOrderStatus('${o.id}','Declined')"><i class="fa-solid fa-xmark"></i>Decline</div>
@@ -1652,7 +1654,47 @@
             targetPhone: order.customerPhone,
             title: "Payment Verified ✓",
             body: `Aapka ₹${order.total} ka payment humein mil gaya hai — order process ho raha hai!`,
-            url: "/gharkakhana/gharkakhana-website.html",
+            url: "gharkakhana-website.html",
+          }),
+        }).catch(() => {});
+      })
+      .catch(err => showToast("Error: " + err.message));
+  }
+
+  // Token-payment follow-up: once the rest of the bill is collected at
+  // delivery/pickup, admin marks it received — the balance drops to 0, the
+  // amount is remembered for the record, and the customer is told their
+  // payment is now fully clear.
+  function markBalanceReceived(id){
+    const order = data.orders.find(x => x.id === id);
+    if(!order || !(order.balanceDue > 0)) return;
+    const amount = order.balanceDue;
+    if(!confirm(`₹${amount} baaki amount mil gaya? Isse payment clear ho jayega.`)) return;
+    if(!window.FIREBASE_CONFIGURED){
+      order.balanceClearedAmount = amount;
+      order.balanceDue = 0;
+      showToast("Payment clear (local demo, save nahi hoga)");
+      renderCalendar(); renderOrdersList();
+      return;
+    }
+    db.collection("orders").doc(id).update({ balanceDue: 0, balanceClearedAmount: amount, balanceClearedAt: firebase.firestore.FieldValue.serverTimestamp() })
+      .then(() => {
+        showToast("Payment clear ✓ — customer ko bata diya");
+        // Best-effort push, same as payment-verified: the Firestore update
+        // above already succeeded and the in-app watcher covers the case
+        // where this push can't be sent.
+        const secret = getNotifySecret();
+        if(!secret) return;
+        const fullBill = (order.amountPaidNow || 0) + amount;
+        fetch("https://gharkakhana-kappa.vercel.app/api/send-notification", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            secret,
+            targetPhone: order.customerPhone,
+            title: "Payment Clear ✓",
+            body: `Baaki ₹${amount} mil gaya — aapka ₹${fullBill} ka payment poora clear ho gaya. Shukriya!`,
+            url: "gharkakhana-website.html",
           }),
         }).catch(() => {});
       })
