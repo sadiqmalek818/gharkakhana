@@ -445,6 +445,8 @@
     extraCharges: { platformFee: 0, packagingCharge: 0, gstPercent: 0 },
     freeDeliveryMembers: [],
     tokenAmounts: [],
+    tiffinPlans: [],
+    tiffinConfig: { weeklyDays: 6, monthlyDays: 26, sundayOff: true },
     content: { about: "", privacy: "", contact: "", whatsapp: "" },
   };
   let currentTab = "cooks";
@@ -541,6 +543,8 @@
         if(d.extraCharges) settings.extraCharges = d.extraCharges;
         if(d.freeDeliveryMembers) settings.freeDeliveryMembers = d.freeDeliveryMembers;
         if(d.tokenAmounts) settings.tokenAmounts = d.tokenAmounts;
+        if(d.tiffinPlans) settings.tiffinPlans = d.tiffinPlans;
+        if(d.tiffinConfig) settings.tiffinConfig = d.tiffinConfig;
       } else {
         // First run — seed the catalog doc with the defaults above.
         db.collection("settings").doc("catalog").set({
@@ -548,7 +552,7 @@
           occasions: settings.occasions, events: settings.events,
           localities: settings.localities, offers: settings.offers,
           partnerTypes: settings.partnerTypes, deliveryRule: settings.deliveryRule,
-          extraCharges: settings.extraCharges, freeDeliveryMembers: settings.freeDeliveryMembers, tokenAmounts: settings.tokenAmounts,
+          extraCharges: settings.extraCharges, freeDeliveryMembers: settings.freeDeliveryMembers, tokenAmounts: settings.tokenAmounts, tiffinPlans: settings.tiffinPlans, tiffinConfig: settings.tiffinConfig,
         }).catch(()=>{});
       }
       if(currentTab === "settings") renderSettings();
@@ -867,6 +871,36 @@
       </div>
 
       <div class="settings-card">
+        <h3><i class="fa-solid fa-bowl-rice"></i> Tiffin Service</h3>
+        <p>Fixed tiffin plans banao — kya-kya milega, roz ka rate, kaunse meal. Customer homepage ke "Tiffin Service" tile se plan chunke 1 din / weekly / monthly book karega. Roz ki delivery plan ke rate mein shamil rehti hai. Jab tak ek bhi active plan nahi hoga, customer ko tile dikhega hi nahi.</p>
+        <div id="tiffinPlanList">
+          ${(settings.tiffinPlans || []).map(p => `
+            <div style="border:1px solid var(--tan); border-radius:12px; padding:10px 12px; margin-bottom:8px; ${p.active === false ? "opacity:0.55;" : ""}">
+              <div style="display:flex; justify-content:space-between; gap:8px;">
+                <b style="font-size:12.5px;">${p.name}</b>
+                <span style="font-size:11px; font-weight:700; color:var(--chili);">₹${p.price}/din</span>
+              </div>
+              <div style="font-size:10.5px; color:var(--text-soft); margin-top:2px;">${p.cook} • ${(p.mealTimes || []).join(", ")}${p.active === false ? " • Deactivated" : ""}</div>
+              <div style="font-size:10.5px; margin-top:4px;">${(p.items || []).join(" • ")}</div>
+              <div style="display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;">
+                <button class="btn btn-ghost btn-sm" onclick="openTiffinPlanForm('${p.key}')"><i class="fa-solid fa-pen"></i>Edit</button>
+                <button class="btn btn-ghost btn-sm" onclick="toggleTiffinPlanActive('${p.key}')"><i class="fa-solid fa-power-off"></i>${p.active === false ? "Activate" : "Deactivate"}</button>
+                <button class="btn btn-ghost btn-sm" onclick="deleteTiffinPlan('${p.key}')"><i class="fa-solid fa-trash"></i>Delete</button>
+              </div>
+            </div>
+          `).join("") || `<span style="font-size:11px; color:var(--text-soft);">Abhi koi tiffin plan nahi hai</span>`}
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="openTiffinPlanForm()"><i class="fa-solid fa-plus"></i>Naya Plan Add Karo</button>
+        <div id="tiffinFormBox"></div>
+        <div style="border-top:1px dashed var(--tan); margin-top:14px; padding-top:12px;">
+          <div class="field"><label>Weekly plan kitne din ka</label><input type="number" id="tc_weekly" min="2" value="${(settings.tiffinConfig || {}).weeklyDays || 6}"></div>
+          <div class="field"><label>Monthly plan kitne din ka</label><input type="number" id="tc_monthly" min="2" value="${(settings.tiffinConfig || {}).monthlyDays || 26}"></div>
+          <label style="display:flex; align-items:center; gap:8px; font-size:12px; margin-bottom:10px;"><input type="checkbox" id="tc_sunday" ${(settings.tiffinConfig || {}).sundayOff === false ? "" : "checked"}> Sunday ko tiffin band</label>
+          <button class="btn btn-primary" style="width:100%;" onclick="saveTiffinConfig()"><i class="fa-solid fa-floppy-disk"></i> Save Karo</button>
+        </div>
+      </div>
+
+      <div class="settings-card">
         <h3><i class="fa-solid fa-coins"></i> Token Payment</h3>
         <p>Bade order (jaise catering, bulk) ke liye customer poora bill na deke sirf ek "token" amount pay kar sake — baaki delivery ke waqt. Yahan jo bhi amounts daaloge, customer ko checkout pe choose karne ke liye dikhenge. Khaali rakhoge to yeh option customer ko dikhega hi nahi.</p>
         <div class="chip-list">
@@ -1023,7 +1057,7 @@
       occasions: settings.occasions, events: settings.events,
       localities: settings.localities, offers: settings.offers,
       partnerTypes: settings.partnerTypes, deliveryRule: settings.deliveryRule,
-      extraCharges: settings.extraCharges, freeDeliveryMembers: settings.freeDeliveryMembers, tokenAmounts: settings.tokenAmounts,
+      extraCharges: settings.extraCharges, freeDeliveryMembers: settings.freeDeliveryMembers, tokenAmounts: settings.tokenAmounts, tiffinPlans: settings.tiffinPlans, tiffinConfig: settings.tiffinConfig,
     })
       .then(() => showToast("Update ho gaya ✓"))
       .catch(err => showToast("Error: " + err.message));
@@ -1043,6 +1077,79 @@
 
   function removeFreeDeliveryMember(phone){
     settings.freeDeliveryMembers = (settings.freeDeliveryMembers || []).filter(p => p !== phone);
+    saveCatalog();
+  }
+
+  // ---------- Tiffin Service plans ----------
+  function openTiffinPlanForm(key){
+    const plan = key ? (settings.tiffinPlans || []).find(p => p.key === key) : null;
+    const meals = ["Breakfast", "Lunch", "Dinner"];
+    const cookNames = data.cooks.filter(c => c.status === "active").map(c => c.name);
+    if(plan && !cookNames.includes(plan.cook)) cookNames.push(plan.cook); // keep the plan's own cook selectable even if now inactive
+    document.getElementById("tiffinFormBox").innerHTML = `
+      <div style="border:1px solid var(--tan); border-radius:12px; padding:12px; margin-top:10px; background:white;">
+        <input type="hidden" id="t_key" value="${plan ? plan.key : ""}">
+        <div class="field"><label>Plan ka naam</label><input type="text" id="t_name" value="${plan ? plan.name : ""}" placeholder="e.g. Basic Tiffin"></div>
+        <div class="field"><label>Cook</label>
+          <select id="t_cook">${cookNames.map(n => `<option value="${n}" ${plan && plan.cook === n ? "selected" : ""}>${n}</option>`).join("")}</select>
+        </div>
+        <div class="field"><label>Roz ka rate (₹, delivery shamil)</label><input type="number" id="t_price" min="1" value="${plan ? plan.price : ""}" placeholder="e.g. 90"></div>
+        <div class="field"><label>Tiffin mein kya-kya (comma se alag karo)</label><textarea id="t_items" rows="2" placeholder="1 sabji, 4 roti, chawal, salad">${plan ? (plan.items || []).join(", ") : ""}</textarea></div>
+        <div class="field"><label>Kaunse meal available</label>
+          <div style="display:flex; gap:12px; flex-wrap:wrap;">
+            ${meals.map(m => `<label style="font-size:12px; display:flex; gap:5px; align-items:center;"><input type="checkbox" class="t_meal" value="${m}" ${plan ? ((plan.mealTimes || []).includes(m) ? "checked" : "") : (m === "Lunch" ? "checked" : "")}>${m}</label>`).join("")}
+          </div>
+        </div>
+        <label style="display:flex; align-items:center; gap:8px; font-size:12px; margin-bottom:10px;"><input type="checkbox" id="t_active" ${!plan || plan.active !== false ? "checked" : ""}> Active (customer ko dikhe)</label>
+        <div class="modal-actions" style="margin-top:0;">
+          <button class="btn btn-ghost" style="flex:1;" onclick="document.getElementById('tiffinFormBox').innerHTML=''">Cancel</button>
+          <button class="btn btn-primary" style="flex:1;" onclick="saveTiffinPlan()">Save Karo</button>
+        </div>
+      </div>
+    `;
+  }
+
+  function saveTiffinPlan(){
+    const name = document.getElementById("t_name").value.trim();
+    const cook = document.getElementById("t_cook").value;
+    const price = Math.round(parseFloat(document.getElementById("t_price").value) || 0);
+    const items = document.getElementById("t_items").value.split(/[,\n]/).map(s => s.trim()).filter(Boolean);
+    const mealTimes = Array.from(document.querySelectorAll(".t_meal:checked")).map(c => c.value);
+    if(!name){ showToast("Plan ka naam likho"); return; }
+    if(!cook){ showToast("Cook chuno"); return; }
+    if(price <= 0){ showToast("Roz ka rate daalo"); return; }
+    if(!items.length){ showToast("Tiffin mein kya-kya hai woh likho"); return; }
+    if(!mealTimes.length){ showToast("Kam se kam ek meal chuno"); return; }
+    if(!settings.tiffinPlans) settings.tiffinPlans = [];
+    const existingKey = document.getElementById("t_key").value;
+    let key = existingKey || slugify(name);
+    if(!existingKey && settings.tiffinPlans.some(p => p.key === key)) key += "_" + Date.now();
+    const plan = { key, name, cook, price, items, mealTimes, active: document.getElementById("t_active").checked };
+    const idx = settings.tiffinPlans.findIndex(p => p.key === key);
+    if(idx >= 0) settings.tiffinPlans[idx] = plan; else settings.tiffinPlans.push(plan);
+    document.getElementById("tiffinFormBox").innerHTML = "";
+    saveCatalog();
+  }
+
+  function toggleTiffinPlanActive(key){
+    const plan = (settings.tiffinPlans || []).find(p => p.key === key);
+    if(!plan) return;
+    plan.active = plan.active === false ? true : false;
+    saveCatalog();
+  }
+
+  function deleteTiffinPlan(key){
+    if(!confirm("Yeh tiffin plan delete karein? (Jo customers pehle book kar chuke hain unka booking safe rahega)")) return;
+    settings.tiffinPlans = (settings.tiffinPlans || []).filter(p => p.key !== key);
+    saveCatalog();
+  }
+
+  function saveTiffinConfig(){
+    settings.tiffinConfig = {
+      weeklyDays: Math.max(2, parseInt(document.getElementById("tc_weekly").value) || 6),
+      monthlyDays: Math.max(2, parseInt(document.getElementById("tc_monthly").value) || 26),
+      sundayOff: document.getElementById("tc_sunday").checked,
+    };
     saveCatalog();
   }
 
@@ -1449,6 +1556,40 @@
   const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
   const DOW = ["S","M","T","W","T","F","S"];
 
+  // ---------- Tiffin helpers (same day-counting rules as the customer site) ----------
+  // A tiffin booking delivers on `days` service days from its start date,
+  // skipping Sundays (if the booking was made with Sunday off) and any
+  // chhutti dates admin added — so each skipped day pushes the plan out by one.
+  function tiffinISO(d){
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
+  function tiffinServiceDates(startDate, days, skipDates, sundayOff){
+    const out = [];
+    if(!startDate) return out;
+    const skip = new Set(skipDates || []);
+    const d = new Date(startDate + "T00:00:00");
+    let guard = 0;
+    while(out.length < days && guard < 800){
+      const iso = tiffinISO(d);
+      if(!(sundayOff && d.getDay() === 0) && !skip.has(iso)) out.push(iso);
+      d.setDate(d.getDate() + 1);
+      guard++;
+    }
+    return out;
+  }
+  function orderTiffinDates(o){
+    return tiffinServiceDates(o.tiffinStartDate, o.tiffinDays, o.tiffinSkipDates, o.tiffinSundayOff !== false);
+  }
+  function tiffinFmtDate(iso){
+    return new Date(iso + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+  }
+  // Normal orders belong to their own date only; a live tiffin subscription
+  // belongs to EVERY delivery day in its plan, so it shows up each day it's due.
+  function orderOnDate(o, iso){
+    if(o.isTiffin && o.status !== "Declined") return orderTiffinDates(o).includes(iso);
+    return o.date === iso;
+  }
+
   function dateToISO(d){
     return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
   }
@@ -1469,7 +1610,7 @@
     }
     for(let day = 1; day <= daysInMonth; day++){
       const iso = `${year}-${String(month+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
-      const dayOrders = data.orders.filter(o => o.date === iso);
+      const dayOrders = data.orders.filter(o => orderOnDate(o, iso));
       const hasPending = dayOrders.some(o => o.status === "Pending");
       const hasConfirmed = dayOrders.some(o => o.status === "Confirmed");
       let dot = "";
@@ -1510,7 +1651,7 @@
   }
 
   function renderOrdersList(){
-    const dayOrders = data.orders.filter(o => o.date === selectedDate);
+    const dayOrders = data.orders.filter(o => orderOnDate(o, selectedDate));
     const pendingCount = dayOrders.filter(o => o.status === "Pending").length;
     const confirmedCount = dayOrders.filter(o => o.status === "Confirmed").length;
 
@@ -1528,7 +1669,7 @@
     // not just when admin happens to click tomorrow's date on the calendar.
     const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
     const tomorrowISO = dateToISO(tomorrow);
-    const tomorrowOrders = data.orders.filter(o => o.date === tomorrowISO && o.status !== "Declined");
+    const tomorrowOrders = data.orders.filter(o => orderOnDate(o, tomorrowISO) && o.status !== "Declined");
     const reminderBanner = tomorrowOrders.length ? `
       <div style="background:#FFF4E0; border:1px solid var(--turmeric); border-radius:12px; padding:12px 14px; margin-bottom:14px;">
         <div style="display:flex; align-items:center; gap:8px; font-weight:700; font-size:12.5px; margin-bottom:6px;">
@@ -1549,9 +1690,18 @@
         <div class="card-top">
           <div class="info">
             <div class="order-item">${o.item}${o.meal === "Urgent" ? '<span class="urgent-tag">URGENT</span>' : ""}</div>
-            ${o.isAdvance ? `<div style="display:inline-flex; align-items:center; gap:4px; background:#FFF4E0; color:var(--turmeric); border-radius:6px; padding:2px 7px; font-size:9.5px; font-weight:700; margin:4px 0;"><i class="fa-solid fa-calendar-clock"></i> ADVANCE ORDER — ${o.date}</div>` : ""}
+            ${o.isTiffin ? (() => {
+              const ds = orderTiffinDates(o);
+              return `<div style="background:#FFF4E0; border-radius:8px; padding:7px 9px; margin:4px 0; font-size:10.5px;">
+                <b><i class="fa-solid fa-bowl-rice"></i> TIFFIN — ${o.tiffinPlan} • ${o.tiffinDays} din • ${o.tiffinMealTime}</b><br>
+                ${ds.length ? tiffinFmtDate(ds[0]) + " → " + tiffinFmtDate(ds[ds.length - 1]) : ""} ${o.tiffinSundayOff !== false ? "(Sunday off)" : ""}<br>
+                ${(o.tiffinItems || []).join(" • ")}
+                ${(o.tiffinSkipDates || []).length ? `<br>Chhutti: ${o.tiffinSkipDates.map(tiffinFmtDate).join(", ")}` : ""}
+              </div>`;
+            })() : ""}
+            ${o.isAdvance && !o.isTiffin ? `<div style="display:inline-flex; align-items:center; gap:4px; background:#FFF4E0; color:var(--turmeric); border-radius:6px; padding:2px 7px; font-size:9.5px; font-weight:700; margin:4px 0;"><i class="fa-solid fa-calendar-clock"></i> ADVANCE ORDER — ${o.date}</div>` : ""}
             <div class="order-meta">${o.customer} • ${o.cook} • ${o.area}</div>
-            <div class="order-meta" style="font-weight:700; color:var(--charcoal);"><i class="fa-solid fa-calendar-day"></i> ${o.date} &nbsp;•&nbsp; <i class="fa-solid ${o.meal === "Lunch" ? "fa-sun" : o.meal === "Dinner" ? "fa-moon" : o.meal === "Urgent" ? "fa-bolt" : "fa-utensils"}"></i> ${o.meal}</div>
+            <div class="order-meta" style="font-weight:700; color:var(--charcoal);"><i class="fa-solid fa-calendar-day"></i> ${o.isTiffin ? selectedDate : o.date} &nbsp;•&nbsp; <i class="fa-solid ${o.meal === "Lunch" ? "fa-sun" : o.meal === "Dinner" ? "fa-moon" : o.meal === "Urgent" ? "fa-bolt" : "fa-utensils"}"></i> ${o.meal}</div>
             <div class="order-meta"><i class="fa-solid ${o.type === "Pickup" ? "fa-store" : "fa-motorcycle"}"></i> ${o.type} • #${o.id}</div>
             ${o.orderGroupId ? `<div class="order-meta" style="color:var(--turmeric);"><i class="fa-solid fa-layer-group"></i> Apna Thaal combo — group #${o.orderGroupId} (alag cooks ke liye alag ticket)</div>` : ""}
             ${o.discount > 0 ? `<div class="order-meta" style="color:var(--sage);"><i class="fa-solid fa-tag"></i> ${o.offerApplied || "Offer"} — -₹${o.discount} (₹${o.subtotal} → ₹${o.total})</div>` : ""}
@@ -1583,6 +1733,10 @@
           ` : ""}
           ${(o.status === "Ready for pickup" || o.status === "Ready for delivery") ? `
             <div class="icon-btn" style="color:var(--sage); border-color:#DCE7D4;" onclick="setOrderStatus('${o.id}','Completed')"><i class="fa-solid fa-circle-check"></i>${o.type === "Pickup" ? "Pickup Complete" : "Delivery Complete"}</div>
+          ` : ""}
+          ${o.isTiffin && o.status === "Confirmed" ? `
+            <div class="icon-btn" onclick="addTiffinSkipDate('${o.id}')"><i class="fa-solid fa-calendar-xmark"></i>Chhutti Add Karo</div>
+            <div class="icon-btn" style="color:var(--sage); border-color:#DCE7D4;" onclick="setOrderStatus('${o.id}','Completed')"><i class="fa-solid fa-circle-check"></i>Tiffin Poora Hua</div>
           ` : ""}
         </div>
       </div>
@@ -1698,6 +1852,30 @@
           }),
         }).catch(() => {});
       })
+      .catch(err => showToast("Error: " + err.message));
+  }
+
+  // Chhutti for one tiffin subscription: that day is skipped and the plan
+  // runs one day longer (the date maths lives in tiffinServiceDates).
+  function addTiffinSkipDate(id){
+    const o = data.orders.find(x => x.id === id);
+    if(!o || !o.isTiffin) return;
+    const v = prompt("Chhutti ki date likho (YYYY-MM-DD, jaise 2026-11-15) — us din tiffin nahi jayega aur plan ek din aage badh jayega:");
+    if(!v) return;
+    const date = v.trim();
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(date) || isNaN(new Date(date + "T00:00:00"))){
+      showToast("Date sahi format mein likho: YYYY-MM-DD");
+      return;
+    }
+    const skips = Array.from(new Set([...(o.tiffinSkipDates || []), date])).sort();
+    if(!window.FIREBASE_CONFIGURED){
+      o.tiffinSkipDates = skips;
+      showToast(`${date} ki chhutti add ho gayi (local demo)`);
+      renderCalendar(); renderOrdersList();
+      return;
+    }
+    db.collection("orders").doc(id).update({ tiffinSkipDates: skips })
+      .then(() => showToast(`${date} ki chhutti add ho gayi ✓ — plan ek din aage badh gaya`))
       .catch(err => showToast("Error: " + err.message));
   }
 

@@ -380,6 +380,12 @@
   .step-desc{font-size:12px; color:var(--text-soft);}
 
   /* Cook CTA banner */
+  .tiffin-tile{display:flex; align-items:center; gap:14px; background:linear-gradient(135deg, #3A2820, #2B1B17); color:#FBF3E7; border-radius:18px; padding:16px; cursor:pointer; box-shadow:0 6px 18px rgba(43,27,23,0.18);}
+  .tiffin-tile:active{transform:scale(0.99);}
+  .tiffin-tile-icon{width:50px; height:50px; min-width:50px; border-radius:14px; background:var(--turmeric); color:var(--charcoal); display:flex; align-items:center; justify-content:center; font-size:24px;}
+  .tiffin-tile-text{flex:1;}
+  .tiffin-tile-text h3{font-size:15px; font-weight:700; margin-bottom:2px;}
+  .tiffin-tile-text p{font-size:11px; opacity:0.8; line-height:1.4;}
   .cook-banner{
     background:linear-gradient(135deg, var(--card), var(--charcoal));
     color:var(--cream); border-radius:22px; padding:22px 20px;
@@ -700,6 +706,19 @@
     </div>
   </section>
 
+  <section style="padding-top:0; display:none;" id="tiffinSection">
+    <div class="wrap">
+      <div class="tiffin-tile" onclick="openTiffinService()">
+        <div class="tiffin-tile-icon"><i class="fa-solid fa-bowl-rice"></i></div>
+        <div class="tiffin-tile-text">
+          <h3>Tiffin Service</h3>
+          <p>Office, clinic ya college ke liye roz ka ghar jaisa tiffin — 1 din, weekly ya monthly</p>
+        </div>
+        <i class="fa-solid fa-chevron-right"></i>
+      </div>
+    </div>
+  </section>
+
   <section style="padding-top:0;">
     <div class="wrap">
       <div class="section-head">
@@ -982,6 +1001,8 @@
     let siteExtraCharges = DEFAULT_EXTRA_CHARGES;
     let siteFreeDeliveryMembers = []; // phone numbers admin has marked (e.g. via Membership) as free-delivery-for-life
     let siteTokenAmounts = []; // admin-configured token/advance amounts customer can choose instead of full bill
+    let siteTiffinPlans = []; // admin-made tiffin plans (fixed bundles) shown under Tiffin Service
+    let siteTiffinConfig = { weeklyDays: 6, monthlyDays: 26, sundayOff: true };
     let selectedPaymentType = "full"; // "full" | "token"
     let selectedTokenAmount = 0;
     function computeDeliveryCharge(personCount){
@@ -1307,6 +1328,9 @@
         siteExtraCharges = d.extraCharges || DEFAULT_EXTRA_CHARGES;
         siteFreeDeliveryMembers = d.freeDeliveryMembers || [];
         siteTokenAmounts = d.tokenAmounts || [];
+        siteTiffinPlans = d.tiffinPlans || [];
+        siteTiffinConfig = d.tiffinConfig || siteTiffinConfig;
+        renderTiffinTile();
         // Delivery charge (shown at Payment step) depends on this rule, so if
         // the customer is already sitting on that step when admin edits it,
         // refresh the figure live instead of leaving a stale amount on screen.
@@ -1550,7 +1574,7 @@
         <div class="cart-total"><span>Total</span><span>₹${cartTotal()}</span></div>
         <div class="modal-actions">
           <button class="btn btn-ghost" style="flex:1;" onclick="closeCart()">Aur add karo</button>
-          <button class="btn btn-primary" style="flex:1;" onclick="renderFulfilStep()">Aage badho</button>
+          <button class="btn btn-primary" style="flex:1;" onclick="proceedFromCart()">Aage badho</button>
         </div>
       `;
     }
@@ -1661,11 +1685,17 @@
           <label>Delivery Instructions (optional)</label>
           <input type="text" id="f_deliveryInstructions" value="${deliveryInstructions}" placeholder="e.g. Darwaze pe rakh dena, call mat karna">
         </div>
+        ${cart.some(i => i.tiffin) ? `
+        <div class="field" style="font-size:12px; color:var(--text-soft);">
+          <i class="fa-solid fa-motorcycle"></i> Tiffin plan mein roz ki delivery shamil hai — alag delivery charge nahi lagega.
+        </div>
+        ` : `
         <div class="field">
           <label>Kitne logo ke liye order hai?</label>
           <input type="number" id="f_personcount" min="1" step="1" value="${orderPersonCount}" oninput="updateDeliveryChargePreview(this.value)">
           <div id="deliveryChargePreview" style="font-size:11px; color:var(--text-soft); margin-top:4px;"></div>
         </div>
+        `}
       ` : `
         <div class="field" style="font-size:12px; color:var(--text-soft);">
           <i class="fa-solid fa-circle-info"></i> Cook ke address se pickup time confirm WhatsApp pe milega.
@@ -1716,6 +1746,15 @@
         Notification.requestPermission().catch(() => {});
       }
       subscribeToPush(); // asks for real push permission right here — this is a user-gesture moment (they just tapped a button), which browsers are far less likely to block than an on-load prompt
+      // A tiffin booking already carries its own start date + meal, so skip
+      // the date/meal step and go straight to payment.
+      const tiffinLine = cart.find(i => i.tiffin);
+      if(tiffinLine){
+        orderDate = tiffinLine.tiffin.startDate;
+        mealType = "tiffin";
+        goToPayment();
+        return;
+      }
       renderMealTimeStep();
     }
 
@@ -2013,7 +2052,7 @@
       const modal = document.getElementById("cartModal");
       const subtotal = cartTotal();
       const discount = appliedOffer ? Math.min(appliedOffer.amount, subtotal) : 0;
-      const deliveryCharge = fulfilment === "delivery" ? computeDeliveryCharge(orderPersonCount) : 0;
+      const deliveryCharge = computeOrderDeliveryCharge();
       const membershipCharge = totalAppliedCharges();
       const extras = computeExtraCharges(subtotal, discount);
       const total = subtotal - discount + deliveryCharge + membershipCharge + extras.platformFee + extras.packagingCharge + extras.gstAmount;
@@ -2077,7 +2116,9 @@
           <div style="display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:4px;"><span>Item total</span><span>₹${subtotal}</span></div>
           ${discount > 0 ? `<div style="display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:4px; color:var(--sage);"><span>${appliedOffer && appliedOffer.kind === "freeItem" ? `🎁 ${appliedOffer.label}` : (appliedOffer ? appliedOffer.label : "Discount")}</span><span>-₹${discount}</span></div>` : ""}
           ${appliedCharges.map(c => `<div style="display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:4px; color:#B5651D;"><span><i class="fa-solid fa-crown"></i> ${c.label}</span><span>+₹${c.amount}</span></div>`).join("")}
-          ${fulfilment === "delivery" ? `<div style="display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:4px;"><span><i class="fa-solid fa-motorcycle"></i> Delivery Charge (${orderPersonCount} log)</span><span>₹${deliveryCharge}</span></div>` : ""}
+          ${fulfilment === "delivery" ? (cart.some(i => i.tiffin)
+            ? `<div style="display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:4px; color:var(--sage);"><span><i class="fa-solid fa-motorcycle"></i> Delivery (tiffin plan mein shamil)</span><span>Free</span></div>`
+            : `<div style="display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:4px;"><span><i class="fa-solid fa-motorcycle"></i> Delivery Charge (${orderPersonCount} log)</span><span>₹${deliveryCharge}</span></div>`) : ""}
           ${extras.packagingCharge > 0 ? `<div style="display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:4px;"><span>Packaging Charge</span><span>₹${extras.packagingCharge}</span></div>` : ""}
           ${extras.platformFee > 0 ? `<div style="display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:4px;"><span>Platform Fee</span><span>₹${extras.platformFee}</span></div>` : ""}
           ${extras.gstAmount > 0 ? `<div style="display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:4px;"><span>GST (govt. taxes, ${extras.gstPercent}%)</span><span>₹${extras.gstAmount}</span></div>` : ""}
@@ -2111,7 +2152,7 @@
           `}
         </div>
         <div class="modal-actions">
-          <button class="btn btn-ghost" style="flex:1;" onclick="renderMealTimeStep()">Wapas</button>
+          <button class="btn btn-ghost" style="flex:1;" onclick="${cart.some(i => i.tiffin) ? 'renderFulfilStep()' : 'renderMealTimeStep()'}">Wapas</button>
           <button class="btn btn-primary" style="flex:1;" onclick="confirmPaymentDone()">Maine payment kar diya</button>
         </div>
       `;
@@ -2128,7 +2169,8 @@
     function confirmPaymentDone(){
       const modal = document.getElementById("cartModal");
       const orderId = "GK" + Math.floor(1000 + Math.random() * 9000);
-      const mealLabel = (siteOccasions.find(o => o.key === mealType) || {}).label || mealType;
+      const tiffinLine = cart.find(i => i.tiffin);
+      const mealLabel = tiffinLine ? tiffinLine.tiffin.mealTime : ((siteOccasions.find(o => o.key === mealType) || {}).label || mealType);
       const isToday = orderDate === todayISO();
       const dateLabel = isToday ? "Aaj" : new Date(orderDate + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 
@@ -2152,7 +2194,7 @@
       // nahi. Multi-cook split mein customer se do baar na liya jaaye isliye
       // sirf pehle ticket ke total mein add karte hain; har ticket mein
       // deliveryCharge field admin ko poori jaankari ke liye dikhta hai.
-      const deliveryCharge = fulfilment === "delivery" ? computeDeliveryCharge(orderPersonCount) : 0;
+      const deliveryCharge = computeOrderDeliveryCharge();
       // Whole-order extras (membership add-charge, platform fee, packaging,
       // GST) — like delivery, these apply ONCE per order, not once per cook,
       // so in a multi-cook split they're added to the first ticket only.
@@ -2188,6 +2230,17 @@
         // Multiple add-charges can stack (e.g. Membership + Donation) — join
         // their labels so admin/cook can see what this amount is made of.
         membershipLabel: appliedCharges.map(c => c.label).join(" + "),
+        ...(tiffinLine ? {
+          isTiffin: true,
+          tiffinPlan: tiffinLine.tiffin.planName,
+          tiffinDays: tiffinLine.tiffin.days,
+          tiffinStartDate: tiffinLine.tiffin.startDate,
+          tiffinMealTime: tiffinLine.tiffin.mealTime,
+          tiffinPerDay: tiffinLine.tiffin.perDay,
+          tiffinItems: tiffinLine.tiffin.items || [],
+          tiffinSundayOff: tiffinLine.tiffin.sundayOff !== false,
+          tiffinSkipDates: [],
+        } : {}),
         paymentType: isTokenPayment ? "token" : "full",
         amountPaidNow: amountPaidNow,
         balanceDue: balanceDue,
@@ -2763,6 +2816,7 @@
             <div style="font-size:10.5px; color:var(--text-soft); margin-top:3px;"><i class="fa-solid fa-calendar-day"></i> ${o.date} &nbsp;•&nbsp; ${o.meal || ""} &nbsp;•&nbsp; ${o.cook} &nbsp;•&nbsp; ₹${o.total}</div>
             ${o.isAdvance ? `<div style="display:inline-flex; align-items:center; gap:4px; background:#FFF4E0; color:var(--turmeric); border-radius:6px; padding:2px 7px; font-size:9.5px; font-weight:700; margin-top:5px;"><i class="fa-solid fa-calendar-clock"></i> ADVANCE ORDER</div>` : ""}
             ${o.paymentVerified ? `<div style="display:inline-flex; align-items:center; gap:4px; background:#EAF4E4; color:var(--sage); border-radius:6px; padding:2px 7px; font-size:9.5px; font-weight:700; margin-top:5px;"><i class="fa-solid fa-circle-check"></i> PAYMENT VERIFIED</div>` : ""}
+            ${o.isTiffin ? `<div style="display:inline-flex; align-items:center; gap:4px; background:#FFF4E0; color:#B5651D; border-radius:6px; padding:2px 7px; font-size:9.5px; font-weight:700; margin-top:5px; margin-left:4px;"><i class="fa-solid fa-bowl-rice"></i> TIFFIN • ${o.tiffinDays} din • ${o.tiffinMealTime}</div>` : ""}
             ${o.paymentType === "token" && o.balanceClearedAmount > 0 ? `<div style="display:inline-flex; align-items:center; gap:4px; background:#EAF4E4; color:var(--sage); border-radius:6px; padding:2px 7px; font-size:9.5px; font-weight:700; margin-top:5px; margin-left:4px;"><i class="fa-solid fa-circle-check"></i> PAYMENT CLEAR</div>` : ""}
             ${o.paymentType === "token" && o.balanceDue > 0 ? `<div style="display:inline-flex; align-items:center; gap:4px; background:#FFF4E0; color:#B5651D; border-radius:6px; padding:2px 7px; font-size:9.5px; font-weight:700; margin-top:5px; margin-left:4px;"><i class="fa-solid fa-coins"></i> TOKEN ₹${o.amountPaidNow} • BAAKI ₹${o.balanceDue}</div>` : ""}
             <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;">
@@ -3375,7 +3429,220 @@ ORDER TIMINGS: ${occasionLine || "N/A"}`;
     // rider-location infrastructure we don't have), but everything else a
     // customer actually needs to know: where things stand, who's bringing
     // it once a rider is assigned, and their own delivery instructions.
+    // ================= TIFFIN SERVICE =================
+    // Plans are fixed bundles set up by admin (what's in the box, price per
+    // day, which meals). A customer just picks a plan, how many days, which
+    // meal, and a start date. A tiffin is a multi-day booking, so it sits in
+    // the cart as ONE line carrying a `tiffin` object and is checked out on
+    // its own (never mixed with ordinary dishes).
+    function tiffinISO(d){
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    }
+    function tomorrowISOStr(){
+      const d = new Date(); d.setDate(d.getDate() + 1);
+      return tiffinISO(d);
+    }
+    // The actual delivery days of a booking: counts `days` service days from
+    // the start date, skipping Sundays (if the kitchen is off) and any
+    // chhutti dates admin added — so a skipped day extends the plan.
+    function tiffinServiceDates(startDate, days, skipDates, sundayOff){
+      const out = [];
+      if(!startDate) return out;
+      const skip = new Set(skipDates || []);
+      const d = new Date(startDate + "T00:00:00");
+      let guard = 0;
+      while(out.length < days && guard < 800){
+        const iso = tiffinISO(d);
+        if(!(sundayOff && d.getDay() === 0) && !skip.has(iso)) out.push(iso);
+        d.setDate(d.getDate() + 1);
+        guard++;
+      }
+      return out;
+    }
+    function tiffinConfig(){
+      return Object.assign({ weeklyDays: 6, monthlyDays: 26, sundayOff: true }, siteTiffinConfig || {});
+    }
+    function nextTiffinDate(iso, sundayOff){
+      const d = new Date(iso + "T00:00:00");
+      if(sundayOff && d.getDay() === 0) d.setDate(d.getDate() + 1);
+      return tiffinISO(d);
+    }
+    function fmtTiffinDate(iso){
+      return new Date(iso + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+    }
+    // A tiffin plan's daily delivery is part of its price, so a tiffin order
+    // never pays the normal per-order rider charge.
+    function computeOrderDeliveryCharge(){
+      if(fulfilment !== "delivery") return 0;
+      if(cart.some(i => i.tiffin)) return 0;
+      return computeDeliveryCharge(orderPersonCount);
+    }
+    // The homepage tile only appears once admin has at least one live plan.
+    function renderTiffinTile(){
+      const sec = document.getElementById("tiffinSection");
+      if(sec) sec.style.display = siteTiffinPlans.some(p => p.active !== false) ? "block" : "none";
+    }
+
+    function openTiffinService(){
+      const plans = siteTiffinPlans.filter(p => p.active !== false);
+      const modal = document.getElementById("profileModal");
+      modal.innerHTML = `
+        <h3><i class="fa-solid fa-bowl-rice" style="color:var(--turmeric);"></i> Tiffin Service</h3>
+        <p style="font-size:11.5px; color:var(--text-soft); margin-bottom:14px;">Roz ka ghar jaisa tiffin — plan chuno, kitne din chahiye woh chuno, bas.</p>
+        ${plans.length ? plans.map(p => `
+          <div style="border:1px solid var(--tan); border-radius:14px; padding:12px 14px; margin-bottom:10px; background:white;">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
+              <div>
+                <div style="font-size:14px; font-weight:700;">${p.name}</div>
+                <div style="font-size:10.5px; color:var(--text-soft);">${p.cook}</div>
+              </div>
+              <div style="text-align:right;">
+                <div style="font-size:15px; font-weight:800; color:var(--chili);">₹${p.price}</div>
+                <div style="font-size:9.5px; color:var(--text-soft);">/ din</div>
+              </div>
+            </div>
+            <div style="display:flex; flex-wrap:wrap; gap:5px; margin:9px 0;">
+              ${(p.items || []).map(it => `<span style="background:var(--cream); border-radius:12px; padding:3px 9px; font-size:10.5px;">${it}</span>`).join("")}
+            </div>
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <span style="font-size:10.5px; color:var(--text-soft);"><i class="fa-regular fa-clock"></i> ${(p.mealTimes || []).join(" • ")}</span>
+              <button class="btn btn-primary btn-sm" onclick="openTiffinBooking('${p.key}')">Book Karo</button>
+            </div>
+          </div>
+        `).join("") : `<div style="text-align:center; padding:18px; color:var(--text-soft); font-size:12px;">Abhi koi tiffin plan available nahi hai.</div>`}
+        <div class="modal-actions"><button class="btn btn-ghost" style="flex:1;" onclick="closeProfile()">Band karo</button></div>
+      `;
+      document.getElementById("profileOverlay").classList.add("open");
+    }
+
+    let tiffinDraft = null;
+    function openTiffinBooking(planKey){
+      const plan = siteTiffinPlans.find(p => p.key === planKey);
+      if(!plan) return;
+      const cfg = tiffinConfig();
+      tiffinDraft = {
+        planKey,
+        days: 1,
+        mealTime: (plan.mealTimes && plan.mealTimes[0]) || "Lunch",
+        startDate: nextTiffinDate(tomorrowISOStr(), cfg.sundayOff),
+      };
+      renderTiffinBooking();
+    }
+    function setTiffinDays(n){ tiffinDraft.days = n; renderTiffinBooking(); }
+    function setTiffinMeal(m){ tiffinDraft.mealTime = m; renderTiffinBooking(); }
+    function setTiffinStart(v){
+      const cfg = tiffinConfig();
+      if(!v || v < tomorrowISOStr()){
+        showToast("Tiffin kal ya uske baad se shuru ho sakta hai");
+      } else {
+        const fixed = nextTiffinDate(v, cfg.sundayOff);
+        if(fixed !== v) showToast("Sunday ko tiffin band hai — Monday se shuru karte hain");
+        tiffinDraft.startDate = fixed;
+      }
+      renderTiffinBooking();
+    }
+
+    function renderTiffinBooking(){
+      const plan = siteTiffinPlans.find(p => p.key === tiffinDraft.planKey);
+      if(!plan) return;
+      const cfg = tiffinConfig();
+      const d = tiffinDraft;
+      const options = [
+        { days: 1, label: "1 Din" },
+        { days: cfg.weeklyDays, label: "Weekly" },
+        { days: cfg.monthlyDays, label: "Monthly" },
+      ];
+      const dates = tiffinServiceDates(d.startDate, d.days, [], cfg.sundayOff);
+      const total = plan.price * d.days;
+      const chip = (active, onclick, html) => `<div onclick="${onclick}" style="flex:1; text-align:center; padding:9px 6px; border-radius:10px; border:1.5px solid ${active ? "var(--chili)" : "var(--tan)"}; background:${active ? "#FBEAE6" : "white"}; color:${active ? "var(--chili)" : "var(--charcoal)"}; cursor:pointer; font-size:11.5px; font-weight:700;">${html}</div>`;
+      const modal = document.getElementById("profileModal");
+      modal.innerHTML = `
+        <h3>${plan.name}</h3>
+        <p style="font-size:11px; color:var(--text-soft); margin-bottom:8px;">${plan.cook} • ₹${plan.price}/din</p>
+        <div style="display:flex; flex-wrap:wrap; gap:5px; margin-bottom:14px;">
+          ${(plan.items || []).map(it => `<span style="background:var(--cream); border-radius:12px; padding:3px 9px; font-size:10.5px;">${it}</span>`).join("")}
+        </div>
+        <div style="font-size:12px; font-weight:700; margin-bottom:6px;">Kitne din ka tiffin?</div>
+        <div style="display:flex; gap:8px; margin-bottom:14px;">
+          ${options.map(o => chip(d.days === o.days, `setTiffinDays(${o.days})`, `${o.label}<br><span style="font-size:10px; font-weight:500;">${o.days} din • ₹${plan.price * o.days}</span>`)).join("")}
+        </div>
+        <div style="font-size:12px; font-weight:700; margin-bottom:6px;">Kaunsa meal?</div>
+        <div style="display:flex; gap:8px; margin-bottom:14px;">
+          ${(plan.mealTimes || ["Lunch"]).map(m => chip(d.mealTime === m, `setTiffinMeal('${m}')`, m)).join("")}
+        </div>
+        <div class="field">
+          <label>Shuru kab se?</label>
+          <input type="date" value="${d.startDate}" min="${tomorrowISOStr()}" onchange="setTiffinStart(this.value)">
+        </div>
+        <div style="background:var(--cream); border-radius:12px; padding:11px 13px; margin-bottom:14px; font-size:11.5px;">
+          <div style="display:flex; justify-content:space-between;"><span>${d.days} din • ${d.mealTime}</span><b>₹${total}</b></div>
+          <div style="color:var(--text-soft); margin-top:3px;">${fmtTiffinDate(dates[0])}${dates.length > 1 ? " se " + fmtTiffinDate(dates[dates.length - 1]) + " tak" : ""}${cfg.sundayOff ? " • Sunday off" : ""}</div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-ghost" style="flex:1;" onclick="openTiffinService()">Wapas</button>
+          <button class="btn btn-primary" style="flex:1;" onclick="addTiffinToCart()">Cart mein add karo</button>
+        </div>
+      `;
+      document.getElementById("profileOverlay").classList.add("open");
+    }
+
+    function addTiffinToCart(){
+      const d = tiffinDraft;
+      const plan = d && siteTiffinPlans.find(p => p.key === d.planKey);
+      if(!plan) return;
+      const cfg = tiffinConfig();
+      if(cart.some(i => !i.tiffin)){
+        if(!confirm("Tiffin booking alag order hota hai. Cart ke baaki items hata ke tiffin add karein?")) return;
+      }
+      // One tiffin per order, and nothing else alongside it.
+      cart = [{
+        name: `Tiffin — ${plan.name} (${d.days} din)`,
+        cook: plan.cook,
+        meta: `${d.days} din × ₹${plan.price}/din • ${d.mealTime} • ${fmtTiffinDate(d.startDate)} se`,
+        total: plan.price * d.days,
+        tiffin: {
+          planKey: plan.key, planName: plan.name, days: d.days, perDay: plan.price,
+          mealTime: d.mealTime, startDate: d.startDate, items: plan.items || [], sundayOff: cfg.sundayOff,
+        },
+      }];
+      appliedOffer = null;
+      appliedCharges = [];
+      closeProfile();
+      updateCartBar();
+      showToast("Tiffin cart mein add ho gaya");
+      openCart();
+    }
+
+    function proceedFromCart(){
+      const tiffinLines = cart.filter(i => i.tiffin);
+      if(tiffinLines.length){
+        if(cart.some(i => !i.tiffin)){
+          showToast("Tiffin booking alag order hai — cart mein sirf tiffin rakho (ya tiffin hata do)");
+          return;
+        }
+        if(tiffinLines.length > 1){
+          showToast("Ek order mein ek hi tiffin plan ho sakta hai");
+          return;
+        }
+        if(tiffinLines[0].tiffin.startDate < tomorrowISOStr()){
+          cart = [];
+          updateCartBar();
+          closeCart();
+          showToast("Is tiffin ki start date nikal chuki hai — dobara booking karo");
+          return;
+        }
+      }
+      renderFulfilStep();
+    }
+
     function trackStepsFor(order){
+      if(order.isTiffin){
+        return [
+          { status: "Pending", label: "Booking mili", icon: "fa-receipt" },
+          { status: "Confirmed", label: "Booking approve ho gayi", icon: "fa-check" },
+          { status: "Completed", label: "Tiffin plan poora hua ✓", icon: "fa-circle-check" },
+        ];
+      }
       return [
         { status: "Pending", label: "Order mila", icon: "fa-receipt" },
         { status: "Confirmed", label: "Approve ho gaya", icon: "fa-check" },
@@ -3390,7 +3657,8 @@ ORDER TIMINGS: ${occasionLine || "N/A"}`;
       const modal = document.getElementById("profileModal");
       const TRACK_STEPS = trackStepsFor(o);
       const currentIdx = o.status === "Declined" ? -1
-        : o.status === "Completed" ? 4
+        : o.status === "Completed" ? (o.isTiffin ? 2 : 4)
+        : o.isTiffin ? (o.status === "Pending" ? 0 : 1)
         : o.status && o.status.startsWith("Ready") ? 3
         : TRACK_STEPS.findIndex(s => s.status === o.status);
 
@@ -3416,6 +3684,13 @@ ORDER TIMINGS: ${occasionLine || "N/A"}`;
             `).join("")}
           </div>
         `}
+        ${o.isTiffin ? `
+          <div style="background:var(--cream); border-radius:10px; padding:11px 13px; margin-bottom:12px; font-size:11.5px;">
+            <div style="font-weight:700; margin-bottom:3px;"><i class="fa-solid fa-bowl-rice" style="color:var(--turmeric);"></i> ${o.tiffinPlan} • ${o.tiffinDays} din • ${o.tiffinMealTime}</div>
+            <div style="color:var(--text-soft);">${(() => { const ds = tiffinServiceDates(o.tiffinStartDate, o.tiffinDays, o.tiffinSkipDates, o.tiffinSundayOff !== false); return ds.length ? fmtTiffinDate(ds[0]) + (ds.length > 1 ? " se " + fmtTiffinDate(ds[ds.length - 1]) + " tak" : "") : ""; })()}</div>
+            <div style="color:var(--text-soft); margin-top:3px;">${(o.tiffinItems || []).join(" • ")}</div>
+          </div>
+        ` : ""}
         ${o.riderName ? `
           <div style="background:var(--cream); border-radius:10px; padding:12px; margin-bottom:12px; display:flex; align-items:center; gap:10px;">
             <div style="width:38px; height:38px; border-radius:50%; background:var(--sage); color:white; display:flex; align-items:center; justify-content:center; font-weight:700;">${o.riderName.charAt(0)}</div>
